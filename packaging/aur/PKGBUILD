@@ -1,14 +1,14 @@
 # Maintainer: firewalker <firew4lker at gmail dot com>
 #
-# Before publishing: replace OWNER in url below with the real GitHub owner, tag
-# the release as v$pkgver, then run `updpkgsums` and `makepkg --printsrcinfo > .SRCINFO`.
+# Before publishing to the AUR: tag the release as v$pkgver on GitHub,
+# then run `updpkgsums` and `makepkg --printsrcinfo > .SRCINFO`.
 
 pkgname=uartist
 pkgver=0.1.0
 pkgrel=1
 pkgdesc='Serial port terminal with ASCII, hex, decimal and binary views'
 arch=('x86_64' 'aarch64')
-url='https://github.com/OWNER/uartist'
+url='https://github.com/firew4lker/uartist'
 license=('GPL-3.0-or-later')
 depends=('gcc-libs' 'glibc' 'libxkbcommon' 'hicolor-icon-theme')
 optdepends=(

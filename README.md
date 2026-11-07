@@ -24,7 +24,7 @@ Not yet supported: Mark/Space parity and 1.5 stop bits, sequences, send file, au
 ## Install
 
 **Linux (tarball):** download `uartist-<version>-x86_64-linux.tar.gz` from the
-releases page and unpack it into `/usr/local`:
+[releases page](https://github.com/firew4lker/uartist/releases) and unpack it into `/usr/local`:
 
 ```bash
 sudo tar -xzf uartist-0.1.0-x86_64-linux.tar.gz -C /usr/local --strip-components=2
