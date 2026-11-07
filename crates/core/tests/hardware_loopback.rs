@@ -5,12 +5,12 @@
 //!                      └── DCD           └── RI
 //! ```
 //!
-//! Opt-in: `HTERM_TEST_PORT=/dev/ttyUSB0 cargo test -p hterm-core --test hardware_loopback -- --ignored`
+//! Opt-in: `UARTIST_TEST_PORT=/dev/ttyUSB0 cargo test -p uartist-core --test hardware_loopback -- --ignored`
 
 use std::time::{Duration, Instant};
 
-use hterm_core::connection::{Connection, Event, ModemLines};
-use hterm_core::settings::PortSettings;
+use uartist_core::connection::{Connection, Event, ModemLines};
+use uartist_core::settings::PortSettings;
 
 fn latest_lines(conn: &Connection, want: ModemLines) -> ModemLines {
     let deadline = Instant::now() + Duration::from_secs(2);
@@ -30,9 +30,9 @@ fn latest_lines(conn: &Connection, want: ModemLines) -> ModemLines {
 }
 
 #[test]
-#[ignore = "needs a wired USB-serial adapter; set HTERM_TEST_PORT"]
+#[ignore = "needs a wired USB-serial adapter; set UARTIST_TEST_PORT"]
 fn status_lines_and_data_loopback() {
-    let path = std::env::var("HTERM_TEST_PORT").expect("set HTERM_TEST_PORT");
+    let path = std::env::var("UARTIST_TEST_PORT").expect("set UARTIST_TEST_PORT");
     let conn = Connection::open(PortSettings::new(path), || {}).expect("open");
 
     let off = ModemLines::default();
@@ -78,9 +78,9 @@ fn status_lines_and_data_loopback() {
 }
 
 #[test]
-#[ignore = "needs a wired USB-serial adapter; set HTERM_TEST_PORT"]
+#[ignore = "needs a wired USB-serial adapter; set UARTIST_TEST_PORT"]
 fn hardware_flow_control_keeps_rts_on() {
-    let path = std::env::var("HTERM_TEST_PORT").expect("set HTERM_TEST_PORT");
+    let path = std::env::var("UARTIST_TEST_PORT").expect("set UARTIST_TEST_PORT");
     let mut settings = PortSettings::new(path);
     settings.cts_flow = true;
     let conn = Connection::open(settings, || {}).expect("open");

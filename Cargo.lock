@@ -1501,38 +1501,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
-name = "hterm-core"
-version = "0.0.1"
-dependencies = [
- "crossbeam-channel",
- "glob",
- "serialport",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "hterm-formats"
-version = "0.0.1"
-dependencies = [
- "directories",
- "hterm-core",
- "serde",
- "thiserror 2.0.21",
- "toml",
-]
-
-[[package]]
-name = "hterm-open"
-version = "0.0.1"
-dependencies = [
- "chrono",
- "eframe",
- "hterm-core",
- "hterm-formats",
- "rfd",
-]
-
-[[package]]
 name = "iana-time-zone"
 version = "0.1.65"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3510,6 +3478,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "uartist"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "eframe",
+ "rfd",
+ "uartist-core",
+ "uartist-formats",
+ "winresource",
+]
+
+[[package]]
+name = "uartist-core"
+version = "0.1.0"
+dependencies = [
+ "crossbeam-channel",
+ "glob",
+ "serialport",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "uartist-formats"
+version = "0.1.0"
+dependencies = [
+ "directories",
+ "serde",
+ "thiserror 2.0.21",
+ "toml",
+ "uartist-core",
+]
+
+[[package]]
 name = "uds_windows"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4341,6 +4342,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8c3b93199df0ab874cdf0c6a94f0a0dc3423fe41f1cafb62b8bd7b1deb277aef"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "winresource"
+version = "0.1.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2bc6d36480b829272a5bdabf08e6dca8004761c1da7e35efef800540c66221b"
+dependencies = [
+ "toml",
+ "version_check",
 ]
 
 [[package]]

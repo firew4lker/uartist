@@ -7,8 +7,8 @@ use eframe::egui::{
     self, Align2, Color32, CornerRadius, EventFilter, FontId, Key, Rect, Sense, Stroke, StrokeKind,
     Ui, pos2, vec2,
 };
-use hterm_core::format::Format;
-use hterm_core::input::{History, InputLine, TokenKind};
+use uartist_core::format::Format;
+use uartist_core::input::{History, InputLine, TokenKind};
 
 use crate::view::{FONT_SIZE, format_color};
 

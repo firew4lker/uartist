@@ -1,28 +1,65 @@
-# hterm-open
+# Uartist
 
 An open-source, cross-platform serial terminal for Linux and Windows, written in
 Rust with [egui](https://github.com/emilk/egui). It aims to offer the feature set
 of the freeware HTerm by Tobias Hammer. It is an independent clean-room
 implementation and is not affiliated with HTerm.
 
-> Status: early development (Phase 0). See [PLAN.md](PLAN.md).
+> Status: v0.1 in preparation. See [PLAN.md](PLAN.md).
+
+## Features (v0.1)
+
+- Port settings: baud (presets or any value), data bits, stop bits, parity, CTS flow control
+- DTR/RTS toggles and CTS/DSR/RI/DCD indicators
+- Received and transmitted views in ASCII, hex, decimal and binary (colour grid)
+- Newline rules: at a sequence (CR, LF, CR+LF, …), every N bytes, after a pause, on direction change
+- Input line that mixes ASCII, hex, decimal and binary values, with history and send-on-enter suffixes
+- Counters, including a counter for one chosen byte value
+- Select bytes and copy them as ASCII, hex, decimal or binary, with timing information
+- Save output as raw bytes or text, with optional timestamps
+- Settings saved automatically
+
+Not yet supported: Mark/Space parity and 1.5 stop bits, sequences, send file, autosend.
+
+## Install
+
+**Linux (tarball):** download `uartist-<version>-x86_64-linux.tar.gz` from the
+releases page and unpack it into `/usr/local`:
+
+```bash
+sudo tar -xzf uartist-0.1.0-x86_64-linux.tar.gz -C /usr/local --strip-components=2
+```
+
+**Arch Linux:** a PKGBUILD is in [packaging/aur](packaging/aur/PKGBUILD).
+
+**Windows:** download `uartist-<version>-x86_64-windows.zip`, unpack it and run `uartist.exe`.
+
+On Linux, your user must be in the `uucp` (Arch) or `dialout` (Debian/Ubuntu)
+group to open serial ports.
 
 ## Building
 
 ```bash
-cargo run -p hterm-open
+cargo run --release -p uartist
 ```
 
-Linux needs the usual X11/Wayland development libraries. On Linux, your user
-must be in the `uucp` (Arch) or `dialout` (Debian/Ubuntu) group to open serial
-ports.
+Linux needs the usual X11/Wayland development libraries.
+
+Packages:
+
+- `packaging/build-linux.sh` builds `dist/uartist-<version>-<arch>-linux.tar.gz`.
+- `packaging/build-windows.sh` cross-builds a Windows zip from Linux
+  (needs `mingw-w64-gcc` and `rustup target add x86_64-pc-windows-gnu`).
+- Pushing a tag like `v0.1.0` to GitHub runs `.github/workflows/release.yml`,
+  which builds both and publishes a GitHub release.
 
 ## Layout
 
 - `crates/core` — serial I/O, data model, formatting (no GUI)
-- `crates/formats` — settings format and HTerm file importers
-- `crates/app` — the egui application
+- `crates/formats` — settings file and (later) HTerm file importers
+- `crates/app` — the egui application (`uartist`)
 - `docs/spec` — behaviour specifications written from black-box analysis
+- `assets`, `packaging` — icon, desktop entry, packaging scripts, PKGBUILD
 
 ## Clean-room policy
 

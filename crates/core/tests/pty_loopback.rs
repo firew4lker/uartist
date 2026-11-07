@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-use hterm_core::connection::{Connection, Event};
-use hterm_core::settings::PortSettings;
+use uartist_core::connection::{Connection, Event};
+use uartist_core::settings::PortSettings;
 
 struct Socat {
     child: Child,
@@ -28,7 +28,7 @@ fn start_socat() -> Option<(Socat, PathBuf, PathBuf)> {
     // Tests run in parallel: each needs its own folder.
     static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let dir = std::env::temp_dir().join(format!("hterm-open-test-{}-{n}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("uartist-test-{}-{n}", std::process::id()));
     std::fs::create_dir_all(&dir).ok()?;
     let (a, b) = (dir.join("a"), dir.join("b"));
     let child = Command::new("socat")
@@ -121,7 +121,7 @@ fn send_and_receive_over_pty_pair() {
 #[test]
 fn unsupported_settings_fail_to_open() {
     let mut s = PortSettings::new("/dev/null");
-    s.parity = hterm_core::settings::Parity::Mark;
+    s.parity = uartist_core::settings::Parity::Mark;
     let err = Connection::open(s, || {}).err().expect("should fail");
     assert!(err.to_string().contains("Mark parity"));
 }

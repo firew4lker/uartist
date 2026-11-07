@@ -3,15 +3,15 @@ resolver = "3"
 members = ["crates/core", "crates/formats", "crates/app"]
 
 [workspace.package]
-version = "0.0.1"
+version = "0.1.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
 repository = ""
 rust-version = "1.95"
 
 [workspace.dependencies]
-hterm-core = { path = "crates/core" }
-hterm-formats = { path = "crates/formats" }
+uartist-core = { path = "crates/core" }
+uartist-formats = { path = "crates/formats" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

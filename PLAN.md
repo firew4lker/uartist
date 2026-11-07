@@ -1,6 +1,6 @@
-# Open-source HTerm clone — project plan
+# Uartist — project plan
 
-Working name: `hterm-open` (final name TBD). License: **GPL-3.0-or-later**.
+Name: **Uartist** (binary `uartist`). License: **GPL-3.0-or-later**.
 Stack: **Rust + egui/eframe**. Targets: **Linux + Windows** (macOS later, code kept portable).
 
 ## Ground rules (clean-room)
@@ -53,7 +53,7 @@ docs/spec/  behaviour specs written from analysis
 
 Done: `settings`, `ports`, `connection` (worker thread), `log`, `format`, `lines`,
 `input` (+ history), `mfs`. 29 unit tests, a socat integration test, and an opt-in
-hardware loopback test (`HTERM_TEST_PORT`).
+hardware loopback test (`UARTIST_TEST_PORT`).
 
 Decisions:
 - `/dev/pts/*` is not in the default port patterns (it lists the user's own terminals).
@@ -80,8 +80,8 @@ status LEDs, status bar. Checked on a socat pair and the FT232R loopback.
 
 Decision: no port is pre-selected at startup (HTerm picks the first one).
 
-Settings: saved as TOML (`hterm-formats::settings`) in the platform config folder
-(`~/.config/hterm-open/settings.toml` on Linux; `HTERM_OPEN_CONFIG` overrides). Written on
+Settings: saved as TOML (`uartist-formats::settings`) in the platform config folder
+(`~/.config/uartist/settings.toml` on Linux; `UARTIST_CONFIG` overrides). Written on
 connect, on exit (window close or Ctrl+Q) and every 5 s when something changed. The last
 chosen port is restored but never auto-connected. A broken file is kept as
 `settings.toml.broken` and defaults are used.
@@ -94,8 +94,15 @@ Selection and copy: click, Shift+click or drag selects bytes; selection bar show
 `Selection (first:last) count - Timediff` and the last byte's timestamp, like HTerm;
 right-click copies as Ascii/Hex/Decimal/Binary; Ctrl+C copies in the view's first format.
 
-All v0.1 features are in. Remaining before releasing v0.1: packaging (Linux binary,
-AUR PKGBUILD, Windows zip) and a first CI run on GitHub.
+All v0.1 features are in.
+
+Packaging (v0.1.0): icon (`assets/`), desktop entry, `packaging/build-linux.sh` (tarball
+with a /usr layout), `packaging/build-windows.sh` (cross-built zip), AUR PKGBUILD
+(`packaging/aur`, tested with makepkg) and `.github/workflows/release.yml` (builds Linux
+on ubuntu-22.04 and Windows natively on a `v*` tag, publishes a GitHub release).
+
+Remaining before releasing v0.1: a GitHub repository (the PKGBUILD has `OWNER` as a
+placeholder), a first CI run there, then tag `v0.1.0`.
 
 Original scope:
 - Connection bar (port, baud, data, stop, parity, connect/disconnect, refresh).

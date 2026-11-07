@@ -1,8 +1,8 @@
 //! The app's own settings file (TOML).
 //!
 //! Stored at the platform config location, e.g.
-//! `~/.config/hterm-open/settings.toml` on Linux and
-//! `%APPDATA%\hterm-open\config\settings.toml` on Windows.
+//! `~/.config/uartist/settings.toml` on Linux and
+//! `%APPDATA%\uartist\config\settings.toml` on Windows.
 //!
 //! Every field has a default, so older or hand-edited files with missing or
 //! unknown keys still load. Values are stored as plain labels ("Even", "1.5",
@@ -43,12 +43,12 @@ impl Default for PortSection {
     fn default() -> Self {
         Self {
             path: String::new(),
-            baud: hterm_core::settings::DEFAULT_BAUD.to_string(),
+            baud: uartist_core::settings::DEFAULT_BAUD.to_string(),
             data_bits: 8,
             stop_bits: "1".into(),
             parity: "None".into(),
             cts_flow: false,
-            patterns: hterm_core::ports::default_patterns(),
+            patterns: uartist_core::ports::default_patterns(),
         }
     }
 }
@@ -89,6 +89,8 @@ pub struct ViewSection {
     pub newline_pause_ms: u32,
     /// Byte value counted by "Count".
     pub count_byte: u8,
+    /// System, Light or Dark.
+    pub theme: String,
 }
 
 impl Default for ViewSection {
@@ -103,6 +105,7 @@ impl Default for ViewSection {
             newline_every: 0,
             newline_pause_ms: 0,
             count_byte: 0,
+            theme: "System".into(),
         }
     }
 }
@@ -165,7 +168,7 @@ pub enum SettingsError {
 
 /// Default location of the settings file, if the platform has a config dir.
 pub fn default_path() -> Option<PathBuf> {
-    directories::ProjectDirs::from("", "", "hterm-open").map(|d| d.config_dir().join(FILE_NAME))
+    directories::ProjectDirs::from("", "", "uartist").map(|d| d.config_dir().join(FILE_NAME))
 }
 
 impl Settings {
@@ -219,7 +222,7 @@ mod tests {
 
     fn temp_path(name: &str) -> PathBuf {
         let dir =
-            std::env::temp_dir().join(format!("hterm-open-settings-{}-{name}", std::process::id()));
+            std::env::temp_dir().join(format!("uartist-settings-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         dir.join("nested").join(FILE_NAME)
     }
@@ -288,7 +291,7 @@ mod message_tests {
 
     #[test]
     fn parse_error_message_is_one_line() {
-        let dir = std::env::temp_dir().join(format!("hterm-open-msg-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("uartist-msg-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join(FILE_NAME);
         std::fs::write(&p, "this is [not toml").unwrap();

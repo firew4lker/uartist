@@ -1,4 +1,4 @@
-//! Core logic for hterm-open: serial I/O, data model, formatting and
+//! Core logic for uartist: serial I/O, data model, formatting and
 //! newline handling. Contains no GUI code so it can be unit-tested.
 //!
 //! Behaviour is specified in `docs/spec/`.

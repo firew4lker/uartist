@@ -8,9 +8,9 @@ use std::time::Instant;
 use eframe::egui::{
     self, Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2,
 };
-use hterm_core::format::{AsciiGlyph, Format, Formats, ascii_glyph, cell_text, copy_text};
-use hterm_core::lines::{Cell, LineBuilder, LineRules};
-use hterm_core::log::{DataLog, Direction};
+use uartist_core::format::{AsciiGlyph, Format, Formats, ascii_glyph, cell_text, copy_text};
+use uartist_core::lines::{Cell, LineBuilder, LineRules};
+use uartist_core::log::{DataLog, Direction};
 
 /// Font size of the data views.
 pub const FONT_SIZE: f32 = 13.0;
@@ -214,6 +214,9 @@ impl DataView {
             let offsets = &self.line_offsets;
             let sel = self.selection.map(Selection::range);
             let sel_color = ui.visuals().selection.bg_fill;
+            // Grid cells are already coloured, so outline the selection in the
+            // strong accent colour instead of filling it.
+            let sel_outline = ui.visuals().selection.stroke.color;
             let mut visible: Vec<(Rect, Row)> = Vec::new();
             let out = egui::ScrollArea::vertical()
                 .id_salt(("view", self.dir))
@@ -252,7 +255,7 @@ impl DataView {
                                 ui.painter().rect_stroke(
                                     r,
                                     2.0,
-                                    Stroke::new(2.0, sel_color),
+                                    Stroke::new(2.0, sel_outline),
                                     StrokeKind::Inside,
                                 );
                             }
@@ -557,7 +560,9 @@ fn draw_grid_row(
     let painter = ui.painter_at(rect);
     let dark = ui.visuals().dark_mode;
     let text = ui.visuals().strong_text_color();
-    let weak = ui.visuals().weak_text_color();
+    // On the coloured cells the usual weak grey is too faint, especially in
+    // light mode: use the text colour, slightly faded.
+    let weak = text.gamma_multiply(0.7);
     for (i, cell) in cells.iter().enumerate() {
         let x = rect.min.x + i as f32 * cell_w;
         for (k, &f) in formats.iter().enumerate() {

@@ -5,10 +5,10 @@ use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use eframe::egui::{self, ComboBox};
-use hterm_core::input::encode_latin1;
-use hterm_core::log::DataLog;
-use hterm_core::output::{OutputFormat, OutputOptions, Source, write_output};
-use hterm_formats::settings::SaveOutputSection;
+use uartist_core::input::encode_latin1;
+use uartist_core::log::DataLog;
+use uartist_core::output::{OutputFormat, OutputOptions, Source, write_output};
+use uartist_formats::settings::SaveOutputSection;
 
 #[derive(Default)]
 pub struct SaveOutputDialog {

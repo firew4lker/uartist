@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Uartist
+GenericName=Serial Terminal
+Comment=Serial port terminal with ASCII, hex, decimal and binary views
+Exec=uartist
+Icon=uartist
+Terminal=false
+Categories=Development;Electronics;
+Keywords=serial;uart;rs232;tty;com;terminal;hex;
+StartupWMClass=uartist

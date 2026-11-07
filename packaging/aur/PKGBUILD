@@ -1,0 +1,53 @@
+# Maintainer: firewalker <firew4lker at gmail dot com>
+#
+# Before publishing: replace OWNER in url below with the real GitHub owner, tag
+# the release as v$pkgver, then run `updpkgsums` and `makepkg --printsrcinfo > .SRCINFO`.
+
+pkgname=uartist
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Serial port terminal with ASCII, hex, decimal and binary views'
+arch=('x86_64' 'aarch64')
+url='https://github.com/OWNER/uartist'
+license=('GPL-3.0-or-later')
+depends=('gcc-libs' 'glibc' 'libxkbcommon' 'hicolor-icon-theme')
+optdepends=(
+  'libx11: X11 support'
+  'wayland: Wayland support'
+  'xdg-desktop-portal: file chooser for Save output'
+)
+makedepends=('cargo')
+checkdepends=('socat')
+options=('!lto')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+prepare() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc --print host-tuple)"
+}
+
+build() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  cargo build --frozen --release -p uartist
+}
+
+check() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo test --frozen --workspace
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  install -Dm755 target/release/uartist "$pkgdir/usr/bin/uartist"
+  install -Dm644 packaging/linux/uartist.desktop "$pkgdir/usr/share/applications/uartist.desktop"
+  for png in assets/icons/hicolor/*/apps/uartist.png; do
+    install -Dm644 "$png" "$pkgdir/usr/share/${png#assets/}"
+  done
+  install -Dm644 assets/uartist.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/uartist.svg"
+  install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+}

@@ -4,21 +4,21 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use eframe::egui::{self, Color32, ComboBox, DragValue, Panel, RichText, Sense, Ui, vec2};
-use hterm_core::connection::{Connection, Event, ModemLines};
-use hterm_core::format::{Format, Formats};
-use hterm_core::input::{History, InputLine, TokenKind};
-use hterm_core::lines::LineRules;
-use hterm_core::log::{DataLog, Direction};
-use hterm_core::mfs::{self, NamedSequence};
-use hterm_core::ports;
-use hterm_core::settings::{BAUD_RATES, DataBits, Parity, PortSettings, StopBits, parse_baud};
-use hterm_formats::settings::{self as saved, FormatFlags, Settings};
+use uartist_core::connection::{Connection, Event, ModemLines};
+use uartist_core::format::{Format, Formats};
+use uartist_core::input::{History, InputLine, TokenKind};
+use uartist_core::lines::LineRules;
+use uartist_core::log::{DataLog, Direction};
+use uartist_core::mfs::{self, NamedSequence};
+use uartist_core::ports;
+use uartist_core::settings::{BAUD_RATES, DataBits, Parity, PortSettings, StopBits, parse_baud};
+use uartist_formats::settings::{self as saved, FormatFlags, Settings};
 
 use crate::input_line::{InputAction, input_line_ui};
 use crate::save_output::{SaveOutputDialog, SaveResult};
 use crate::view::{DataView, ViewResponse};
 
-pub struct HtermApp {
+pub struct UartistApp {
     // Connection settings, as edited in the toolbar.
     port_text: String,
     ports: Vec<String>,
@@ -67,16 +67,17 @@ pub struct HtermApp {
     save_output: SaveOutputDialog,
     /// The view clicked last; Ctrl+C copies its selection.
     active_view: Direction,
+    theme: egui::ThemePreference,
 }
 
 /// How often changed settings are written while the app runs.
 const AUTOSAVE_INTERVAL: Duration = Duration::from_secs(5);
 
-impl HtermApp {
-    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+impl UartistApp {
+    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let mut app = Self::with_defaults();
-        // HTERM_OPEN_CONFIG overrides the settings file (handy for testing).
-        app.settings_path = std::env::var_os("HTERM_OPEN_CONFIG")
+        // UARTIST_CONFIG overrides the settings file (handy for testing).
+        app.settings_path = std::env::var_os("UARTIST_CONFIG")
             .map(PathBuf::from)
             .or_else(saved::default_path);
         if let Some(path) = app.settings_path.clone() {
@@ -94,6 +95,8 @@ impl HtermApp {
             }
         }
         app.ports = ports::list_ports(&app.patterns);
+        crate::theme::install(&cc.egui_ctx);
+        cc.egui_ctx.set_theme(app.theme);
         app
     }
 
@@ -106,7 +109,7 @@ impl HtermApp {
             port_text: String::new(),
             ports: Vec::new(),
             patterns,
-            baud_text: hterm_core::settings::DEFAULT_BAUD.to_string(),
+            baud_text: uartist_core::settings::DEFAULT_BAUD.to_string(),
             data_bits: DataBits::default(),
             stop_bits: StopBits::default(),
             parity: Parity::default(),
@@ -139,6 +142,7 @@ impl HtermApp {
             next_autosave: Instant::now() + AUTOSAVE_INTERVAL,
             save_output: SaveOutputDialog::default(),
             active_view: Direction::Rx,
+            theme: egui::ThemePreference::System,
         }
     }
 
@@ -163,6 +167,7 @@ impl HtermApp {
         self.newline_every = v.newline_every;
         self.pause_ms = v.newline_pause_ms;
         self.log.set_counted_byte(v.count_byte);
+        self.theme = theme_from_label(&v.theme);
 
         self.input_kind = TokenKind::from_label(&s.input.kind).unwrap_or_default();
         self.send_on_enter_sel = preset_index(&self.send_on_enter, &s.input.send_on_enter);
@@ -190,6 +195,7 @@ impl HtermApp {
                 newline_every: self.newline_every,
                 newline_pause_ms: self.pause_ms,
                 count_byte: self.log.counter().value,
+                theme: theme_label(self.theme).into(),
             },
             input: saved::InputSection {
                 kind: self.input_kind.label().into(),
@@ -339,7 +345,7 @@ impl HtermApp {
     }
 }
 
-impl eframe::App for HtermApp {
+impl eframe::App for UartistApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Ctrl+Q quits, like HTerm's File > Quit.
         if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::Q)) {
@@ -419,7 +425,7 @@ impl eframe::App for HtermApp {
     }
 }
 
-impl HtermApp {
+impl UartistApp {
     fn connection_bar(&mut self, ui: &mut Ui, ctx: &egui::Context) {
         let connected = self.conn.is_some();
         ui.horizontal_wrapped(|ui| {
@@ -668,7 +674,43 @@ impl HtermApp {
                 };
                 ui.colored_label(color, msg);
             }
+            // Theme selector at the right end.
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let before = self.theme;
+                ComboBox::from_id_salt("theme")
+                    .width(70.0)
+                    .selected_text(theme_label(self.theme))
+                    .show_ui(ui, |ui| {
+                        for t in [
+                            egui::ThemePreference::System,
+                            egui::ThemePreference::Light,
+                            egui::ThemePreference::Dark,
+                        ] {
+                            ui.selectable_value(&mut self.theme, t, theme_label(t));
+                        }
+                    });
+                ui.label("Theme");
+                if self.theme != before {
+                    ui.ctx().set_theme(self.theme);
+                }
+            });
         });
+    }
+}
+
+fn theme_label(t: egui::ThemePreference) -> &'static str {
+    match t {
+        egui::ThemePreference::System => "System",
+        egui::ThemePreference::Light => "Light",
+        egui::ThemePreference::Dark => "Dark",
+    }
+}
+
+fn theme_from_label(s: &str) -> egui::ThemePreference {
+    match s.trim().to_ascii_lowercase().as_str() {
+        "light" => egui::ThemePreference::Light,
+        "dark" => egui::ThemePreference::Dark,
+        _ => egui::ThemePreference::System,
     }
 }
 

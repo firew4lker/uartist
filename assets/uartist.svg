@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <!-- Uartist icon: one UART frame (idle, start bit, 8 data bits 0x5A LSB first, stop bit) -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#25344a"/>
+      <stop offset="1" stop-color="#141c28"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="48" fill="url(#bg)"/>
+  <!-- status LEDs -->
+  <circle cx="64" cy="64" r="11" fill="#3ddc84"/>
+  <circle cx="100" cy="64" r="11" fill="#3ddc84" opacity="0.35"/>
+  <circle cx="136" cy="64" r="11" fill="#3ddc84"/>
+  <!-- waveform: x from 36 to 220, 10 bit slots of 16px after a 20px idle -->
+  <polyline fill="none" stroke="#7fd8ff" stroke-width="12" stroke-linejoin="round" stroke-linecap="round"
+    points="36,116 56,116 56,184 72,184 72,184 88,184 88,116 104,116 104,184 120,184 120,116 136,116 136,116 152,116 152,184 168,184 168,116 184,116 184,184 200,184 200,116 220,116"/>
+  <!-- baseline ticks -->
+  <rect x="36" y="206" width="184" height="6" rx="3" fill="#7fd8ff" opacity="0.25"/>
+</svg>

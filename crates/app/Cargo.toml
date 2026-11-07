@@ -1,5 +1,5 @@
 [package]
-name = "hterm-open"
+name = "uartist"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -11,6 +11,9 @@ workspace = true
 [dependencies]
 chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 eframe = "0.37.0"
-hterm-core.workspace = true
-hterm-formats.workspace = true
+uartist-core.workspace = true
+uartist-formats.workspace = true
 rfd = "0.18.0"
+
+[build-dependencies]
+winresource = "0.1.34"
