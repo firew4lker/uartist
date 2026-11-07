@@ -68,6 +68,36 @@ captions are what the UI shows.
   that has already been received. Nothing is lost.
 - Context menu items found in the binary's strings: Copy as Ascii/Hex/Decimal/Binary, and Copy selection.
 
+## Selection and copy
+
+Observed on HTerm 0.8.9 by receiving `Hello\r\nWorld\0\xFF end` and then, a minute later, `X`.
+
+- **Click** selects one byte. **Shift+click** extends the selection from the
+  first clicked byte. (Dragging didn't extend it in an automated test.)
+- Selected cells get a blue/lavender background.
+- **Selection bar** under each view:
+  - Nothing selected: `Selection (-)`.
+  - Bytes 1 to 7 selected: `Selection (1:7) 7  -  Timediff 00:00:00.000.0`
+    (zero-based first and last byte index, then the count).
+  - `Timediff`: time between the first and last selected bytes, written
+    `HH:MM:SS.mmm.uuu` (e.g. `00:01:09.136.548` across two chunks a minute apart).
+  - On the right: `Timestamp: 16:45:53.140.952`, the arrival time of the last
+    selected byte. All bytes of one chunk share its time.
+- **Right-click menu**: Copy as Ascii, Copy as Hex, Copy as Decimal, Copy as Binary.
+  For `e l l o CR LF W`:
+
+  | Copy as | Clipboard |
+  |---|---|
+  | Ascii | `ello<\r><\n>W`; NUL is `<\0>`, and 0xFF became `?` |
+  | Hex | `65 6C 6C 6F 0D 0A 57` |
+  | Decimal | `101 108 108 111 013 010 087` |
+  | Binary | `01100101 01101100 01101100 01101111 00001101 00001010 01010111` |
+
+> Our version:
+> - Dragging also selects.
+> - Other non-printable bytes are copied as `<\xFF>` instead of `?`, so no information is lost.
+> - Ctrl+C copies the selection in the view's first enabled format.
+
 ## Counters
 
 - **Rx / Tx**: totals of received and transmitted bytes. Each has its own Reset.

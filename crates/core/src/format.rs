@@ -117,6 +117,35 @@ pub fn cell_text(format: Format, b: u8) -> String {
     }
 }
 
+/// Text for copying bytes to the clipboard ("Copy as …").
+///
+/// ASCII: printable characters as-is; CR, LF and NUL as `<\r>`, `<\n>`, `<\0>`;
+/// any other byte as `<\xHH>`. Other formats: values separated by spaces.
+pub fn copy_text(bytes: &[u8], format: Format) -> String {
+    match format {
+        Format::Ascii => {
+            let mut s = String::with_capacity(bytes.len());
+            for &b in bytes {
+                match ascii_glyph(b) {
+                    AsciiGlyph::Char(c) => s.push(c),
+                    AsciiGlyph::Control(sym) => {
+                        s.push('<');
+                        s.push_str(sym);
+                        s.push('>');
+                    }
+                    AsciiGlyph::Unprintable => s.push_str(&format!("<\\x{b:02X}>")),
+                }
+            }
+            s
+        }
+        f => bytes
+            .iter()
+            .map(|&b| cell_text(f, b))
+            .collect::<Vec<_>>()
+            .join(" "),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -139,6 +168,18 @@ mod tests {
         assert_eq!(ascii_glyph(0x01), AsciiGlyph::Unprintable);
         assert_eq!(ascii_glyph(0xff), AsciiGlyph::Unprintable);
         assert_eq!(ascii_glyph(b' '), AsciiGlyph::Char(' '));
+    }
+
+    #[test]
+    fn copy_like_hterm() {
+        // docs/spec/views.md: the bytes "e l l o CR LF W".
+        let b = b"ello\r\nW";
+        assert_eq!(copy_text(b, Format::Ascii), "ello<\\r><\\n>W");
+        assert_eq!(copy_text(b, Format::Hex), "65 6C 6C 6F 0D 0A 57");
+        assert_eq!(copy_text(b, Format::Dec), "101 108 108 111 013 010 087");
+        assert_eq!(copy_text(b"e\r", Format::Bin), "01100101 00001101");
+        assert_eq!(copy_text(b"d\0\xff", Format::Ascii), "d<\\0><\\xFF>");
+        assert_eq!(copy_text(b"", Format::Hex), "");
     }
 
     #[test]

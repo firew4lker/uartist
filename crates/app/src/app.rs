@@ -16,7 +16,7 @@ use hterm_formats::settings::{self as saved, FormatFlags, Settings};
 
 use crate::input_line::{InputAction, input_line_ui};
 use crate::save_output::{SaveOutputDialog, SaveResult};
-use crate::view::DataView;
+use crate::view::{DataView, ViewResponse};
 
 pub struct HtermApp {
     // Connection settings, as edited in the toolbar.
@@ -65,6 +65,8 @@ pub struct HtermApp {
     saved: Option<Settings>,
     next_autosave: Instant,
     save_output: SaveOutputDialog,
+    /// The view clicked last; Ctrl+C copies its selection.
+    active_view: Direction,
 }
 
 /// How often changed settings are written while the app runs.
@@ -136,6 +138,7 @@ impl HtermApp {
             saved: None,
             next_autosave: Instant::now() + AUTOSAVE_INTERVAL,
             save_output: SaveOutputDialog::default(),
+            active_view: Direction::Rx,
         }
     }
 
@@ -221,10 +224,21 @@ impl HtermApp {
         }
     }
 
-    fn rebuild_views(&mut self) {
+    /// Rebuild both views. `keep_rx`/`keep_tx`: whether that view's byte
+    /// stream is unchanged (only display rules changed), so its selection stays.
+    fn rebuild_views(&mut self, keep_rx: bool, keep_tx: bool) {
         let rules = self.line_rules();
-        self.rx_view.rebuild(rules.clone(), &self.log);
-        self.tx_view.rebuild(rules, &self.log);
+        self.rx_view.rebuild(rules.clone(), &self.log, keep_rx);
+        self.tx_view.rebuild(rules, &self.log, keep_tx);
+    }
+
+    fn view_response(&mut self, dir: Direction, r: ViewResponse, ctx: &egui::Context) {
+        if r.pressed {
+            self.active_view = dir;
+        }
+        if let Some(text) = r.copy {
+            ctx.copy_text(text);
+        }
     }
 
     fn info(&mut self, msg: impl Into<String>) {
@@ -299,7 +313,7 @@ impl HtermApp {
             }
         }
         if trimmed {
-            self.rebuild_views();
+            self.rebuild_views(false, false);
         }
     }
 
@@ -337,7 +351,7 @@ impl eframe::App for HtermApp {
         }
         let rules = self.line_rules();
         if *self.rx_view.rules() != rules {
-            self.rebuild_views();
+            self.rebuild_views(true, true);
         }
         if Instant::now() >= self.next_autosave {
             self.save_settings();
@@ -365,13 +379,31 @@ impl eframe::App for HtermApp {
             .show(ui, |ui| {
                 ui.add_space(4.0);
                 ui.label(RichText::new("Transmitted data").small().weak());
-                self.tx_view.ui(ui, &self.tx_formats, self.autoscroll);
+                let r = self
+                    .tx_view
+                    .ui(ui, &self.tx_formats, self.autoscroll, &self.log);
+                self.view_response(Direction::Tx, r, &ctx);
             });
         Panel::bottom("input").show(ui, |ui| self.input_panel(ui));
         egui::CentralPanel::default().show(ui, |ui| {
             ui.label(RichText::new("Received data").small().weak());
-            self.rx_view.ui(ui, &self.rx_formats, self.autoscroll);
+            let r = self
+                .rx_view
+                .ui(ui, &self.rx_formats, self.autoscroll, &self.log);
+            self.view_response(Direction::Rx, r, &ctx);
         });
+        // Ctrl+C copies from the view clicked last, unless a text box has focus.
+        let copy_pressed = ctx.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Copy)));
+        if copy_pressed && ctx.memory(|m| m.focused().is_none()) {
+            let (view, formats) = match self.active_view {
+                Direction::Rx => (&self.rx_view, &self.rx_formats),
+                Direction::Tx => (&self.tx_view, &self.tx_formats),
+            };
+            let format = formats.enabled().next().unwrap_or(Format::Ascii);
+            if let Some(text) = view.copy(format) {
+                ctx.copy_text(text);
+            }
+        }
         if self.save_output.open {
             match self.save_output.ui(&ctx, &self.log) {
                 Some(SaveResult::Saved(msg)) => self.info(msg),
@@ -504,7 +536,7 @@ impl HtermApp {
         ui.horizontal_wrapped(|ui| {
             if ui.button("Clear received").clicked() {
                 self.log.clear(Direction::Rx);
-                self.rebuild_views();
+                self.rebuild_views(false, true);
             }
             format_checkboxes(ui, &mut self.rx_formats);
             ui.separator();
@@ -549,7 +581,7 @@ impl HtermApp {
         ui.horizontal_wrapped(|ui| {
             if ui.button("Clear transmitted").clicked() {
                 self.log.clear(Direction::Tx);
-                self.rebuild_views();
+                self.rebuild_views(true, false);
             }
             format_checkboxes(ui, &mut self.tx_formats);
             ui.separator();

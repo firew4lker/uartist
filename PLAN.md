@@ -71,7 +71,7 @@ Original scope:
 - Newline engine and clear-at rules; input parser for each input type.
 - Thorough unit tests + Linux pty integration tests.
 
-### Phase 3 — GUI → **v0.1 "Core terminal"** — in progress
+### Phase 3 — GUI → **v0.1 "Core terminal"** — features done
 
 Done (`crates/app`): connection bar (editable port and baud boxes), counters, Count byte,
 newline controls, receive and transmit views (ASCII and colour grid, wrapped, virtualized
@@ -90,7 +90,12 @@ Save output: dialog with format (Raw/Asc/Hex/Dec/Bin), source (Received/Transmit
 separator and timestamps, matching HTerm's file layout (`docs/spec/save-output.md`), with
 deliberate differences: the source really filters, Raw has no headers, Asc keeps line breaks.
 
-Remaining for v0.1: selection + copy as Ascii/Hex/Dec/Bin.
+Selection and copy: click, Shift+click or drag selects bytes; selection bar shows
+`Selection (first:last) count - Timediff` and the last byte's timestamp, like HTerm;
+right-click copies as Ascii/Hex/Decimal/Binary; Ctrl+C copies in the view's first format.
+
+All v0.1 features are in. Remaining before releasing v0.1: packaging (Linux binary,
+AUR PKGBUILD, Windows zip) and a first CI run on GitHub.
 
 Original scope:
 - Connection bar (port, baud, data, stop, parity, connect/disconnect, refresh).
