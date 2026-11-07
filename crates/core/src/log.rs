@@ -6,7 +6,7 @@
 //! The log has a size limit. When it's exceeded, the oldest quarter is
 //! dropped in one go, so views only need rebuilding now and then.
 
-use std::time::Instant;
+use std::time::{Instant, SystemTime};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Direction {
@@ -45,6 +45,9 @@ pub struct DataLog {
     /// Sum of `chunk_cost` over `chunks`.
     stored: usize,
     limit: usize,
+    /// Matching monotonic and wall-clock times, to turn chunk times into
+    /// clock times for timestamps.
+    epoch: (Instant, SystemTime),
     rx_total: u64,
     tx_total: u64,
     counter: ByteCounter,
@@ -66,9 +69,19 @@ impl DataLog {
             chunks: Vec::new(),
             stored: 0,
             limit: limit.max(1),
+            epoch: (Instant::now(), SystemTime::now()),
             rx_total: 0,
             tx_total: 0,
             counter: ByteCounter::default(),
+        }
+    }
+
+    /// Wall-clock time of a chunk's `at`.
+    pub fn wall_time(&self, at: Instant) -> SystemTime {
+        let (i0, s0) = self.epoch;
+        match at.checked_duration_since(i0) {
+            Some(d) => s0 + d,
+            None => s0 - i0.duration_since(at),
         }
     }
 

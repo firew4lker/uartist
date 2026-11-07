@@ -9,6 +9,7 @@ pub mod input;
 pub mod lines;
 pub mod log;
 pub mod mfs;
+pub mod output;
 pub mod ports;
 pub mod settings;
 

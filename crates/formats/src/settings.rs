@@ -21,6 +21,7 @@ pub struct Settings {
     pub port: PortSection,
     pub view: ViewSection,
     pub input: InputSection,
+    pub save_output: SaveOutputSection,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -120,6 +121,31 @@ impl Default for InputSection {
         Self {
             kind: "ASC".into(),
             send_on_enter: "None".into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SaveOutputSection {
+    /// Raw, Asc, Hex, Dec or Bin.
+    pub format: String,
+    /// Received, Transmitted or Both.
+    pub source: String,
+    pub separator: String,
+    pub timestamps: bool,
+    /// Last file saved to.
+    pub path: String,
+}
+
+impl Default for SaveOutputSection {
+    fn default() -> Self {
+        Self {
+            format: "Raw".into(),
+            source: "Received".into(),
+            separator: String::new(),
+            timestamps: false,
+            path: String::new(),
         }
     }
 }

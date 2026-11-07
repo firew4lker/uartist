@@ -86,7 +86,11 @@ connect, on exit (window close or Ctrl+Q) and every 5 s when something changed. 
 chosen port is restored but never auto-connected. A broken file is kept as
 `settings.toml.broken` and defaults are used.
 
-Remaining for v0.1: save output, selection + copy as Ascii/Hex/Dec/Bin.
+Save output: dialog with format (Raw/Asc/Hex/Dec/Bin), source (Received/Transmitted/Both),
+separator and timestamps, matching HTerm's file layout (`docs/spec/save-output.md`), with
+deliberate differences: the source really filters, Raw has no headers, Asc keeps line breaks.
+
+Remaining for v0.1: selection + copy as Ascii/Hex/Dec/Bin.
 
 Original scope:
 - Connection bar (port, baud, data, stop, parity, connect/disconnect, refresh).

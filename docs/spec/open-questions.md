@@ -10,7 +10,7 @@ What we still need to find out, and how.
 | 4 | Clear at, Receive bitmask, Show errors behaviour | Test over a socat pair |
 | 5 | Newline every N combined with Newline at; newline by pause | Test over a socat pair |
 | 6 | Combined TX/RX view and "newline on source change" | Test over a socat pair |
-| 7 | Save output options (Source, Timestamps, Separator, Format) | Open the split-button menu and save files |
+| 7 | ~~Save output options~~ Done, see save-output.md. Still unclear: whether HTerm's "Transmitted" source filter works | Retest with a mouse-picked source |
 | 8 | Autosend and Send file behaviour | Test over a socat pair |
 | 9 | Parity/framing error display ("Show errors") | Needs two adapters with TX/RX crossed, set to mismatched parity. All status lines and flow control are done (see connection.md) |
 | 10 | Data bits list includes 5? | Scroll the Data dropdown |

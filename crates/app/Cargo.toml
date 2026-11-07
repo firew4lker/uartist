@@ -9,6 +9,8 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 eframe = "0.37.0"
 hterm-core.workspace = true
 hterm-formats.workspace = true
+rfd = "0.18.0"

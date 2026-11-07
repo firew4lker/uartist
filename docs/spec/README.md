@@ -8,6 +8,7 @@ never how its code is written. One file per area:
 - [views.md](views.md): window layout, data views, counters
 - [newline.md](newline.md): newline display rules
 - [input.md](input.md): input line tokens, sending
+- [save-output.md](save-output.md): Save output options and file layout
 - [file-formats.md](file-formats.md): `hterm.cfg`, mfs notation, `.hts`
 - [open-questions.md](open-questions.md): what is still unknown
 

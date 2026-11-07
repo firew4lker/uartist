@@ -15,6 +15,7 @@ use hterm_core::settings::{BAUD_RATES, DataBits, Parity, PortSettings, StopBits,
 use hterm_formats::settings::{self as saved, FormatFlags, Settings};
 
 use crate::input_line::{InputAction, input_line_ui};
+use crate::save_output::{SaveOutputDialog, SaveResult};
 use crate::view::DataView;
 
 pub struct HtermApp {
@@ -63,6 +64,7 @@ pub struct HtermApp {
     /// What was last written, to save only when something changed.
     saved: Option<Settings>,
     next_autosave: Instant,
+    save_output: SaveOutputDialog,
 }
 
 /// How often changed settings are written while the app runs.
@@ -133,6 +135,7 @@ impl HtermApp {
             settings_path: None,
             saved: None,
             next_autosave: Instant::now() + AUTOSAVE_INTERVAL,
+            save_output: SaveOutputDialog::default(),
         }
     }
 
@@ -160,6 +163,7 @@ impl HtermApp {
 
         self.input_kind = TokenKind::from_label(&s.input.kind).unwrap_or_default();
         self.send_on_enter_sel = preset_index(&self.send_on_enter, &s.input.send_on_enter);
+        self.save_output.apply(&s.save_output);
     }
 
     fn to_settings(&self) -> Settings {
@@ -188,6 +192,7 @@ impl HtermApp {
                 kind: self.input_kind.label().into(),
                 send_on_enter: self.send_on_enter[self.send_on_enter_sel].name.clone(),
             },
+            save_output: self.save_output.to_section(),
         }
     }
 
@@ -367,6 +372,13 @@ impl eframe::App for HtermApp {
             ui.label(RichText::new("Received data").small().weak());
             self.rx_view.ui(ui, &self.rx_formats, self.autoscroll);
         });
+        if self.save_output.open {
+            match self.save_output.ui(&ctx, &self.log) {
+                Some(SaveResult::Saved(msg)) => self.info(msg),
+                Some(SaveResult::Failed(msg)) => self.error(msg),
+                None => {}
+            }
+        }
     }
 
     fn on_exit(&mut self) {
@@ -495,6 +507,10 @@ impl HtermApp {
                 self.rebuild_views();
             }
             format_checkboxes(ui, &mut self.rx_formats);
+            ui.separator();
+            if ui.button("Save output…").clicked() {
+                self.save_output.open = true;
+            }
             ui.separator();
             ui.label("Newline every");
             ui.add(DragValue::new(&mut self.newline_every).range(0..=4096))
