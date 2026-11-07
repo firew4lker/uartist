@@ -80,8 +80,13 @@ status LEDs, status bar. Checked on a socat pair and the FT232R loopback.
 
 Decision: no port is pre-selected at startup (HTerm picks the first one).
 
-Remaining for v0.1: settings persistence (TOML), save output, selection + copy as
-Ascii/Hex/Dec/Bin.
+Settings: saved as TOML (`hterm-formats::settings`) in the platform config folder
+(`~/.config/hterm-open/settings.toml` on Linux; `HTERM_OPEN_CONFIG` overrides). Written on
+connect, on exit (window close or Ctrl+Q) and every 5 s when something changed. The last
+chosen port is restored but never auto-connected. A broken file is kept as
+`settings.toml.broken` and defaults are used.
+
+Remaining for v0.1: save output, selection + copy as Ascii/Hex/Dec/Bin.
 
 Original scope:
 - Connection bar (port, baud, data, stop, parity, connect/disconnect, refresh).

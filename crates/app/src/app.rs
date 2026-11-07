@@ -1,6 +1,7 @@
 //! The main window: state, connection handling and layout.
 
-use std::time::Duration;
+use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use eframe::egui::{self, Color32, ComboBox, DragValue, Panel, RichText, Sense, Ui, vec2};
 use hterm_core::connection::{Connection, Event, ModemLines};
@@ -11,6 +12,7 @@ use hterm_core::log::{DataLog, Direction};
 use hterm_core::mfs::{self, NamedSequence};
 use hterm_core::ports;
 use hterm_core::settings::{BAUD_RATES, DataBits, Parity, PortSettings, StopBits, parse_baud};
+use hterm_formats::settings::{self as saved, FormatFlags, Settings};
 
 use crate::input_line::{InputAction, input_line_ui};
 use crate::view::DataView;
@@ -56,18 +58,49 @@ pub struct HtermApp {
 
     /// Last warning or error, shown in the status bar.
     message: Option<(String, bool)>,
+    /// Where settings are saved; `None` if the platform has no config folder.
+    settings_path: Option<PathBuf>,
+    /// What was last written, to save only when something changed.
+    saved: Option<Settings>,
+    next_autosave: Instant,
 }
+
+/// How often changed settings are written while the app runs.
+const AUTOSAVE_INTERVAL: Duration = Duration::from_secs(5);
 
 impl HtermApp {
     pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+        let mut app = Self::with_defaults();
+        // HTERM_OPEN_CONFIG overrides the settings file (handy for testing).
+        app.settings_path = std::env::var_os("HTERM_OPEN_CONFIG")
+            .map(PathBuf::from)
+            .or_else(saved::default_path);
+        if let Some(path) = app.settings_path.clone() {
+            match Settings::load(&path) {
+                Ok(s) => {
+                    app.apply_settings(&s);
+                    app.saved = Some(s);
+                }
+                Err(e) => {
+                    let backup = saved::back_up_broken(&path)
+                        .map(|b| format!(" A copy was kept as {}.", b.display()))
+                        .unwrap_or_default();
+                    app.error(format!("{e}. Using defaults.{backup}"));
+                }
+            }
+        }
+        app.ports = ports::list_ports(&app.patterns);
+        app
+    }
+
+    fn with_defaults() -> Self {
         let patterns = ports::default_patterns();
-        let ports = ports::list_ports(&patterns);
         let rules = LineRules::default();
         Self {
             // Unlike HTerm, don't pre-select a port: Connect must never open
             // something the user didn't choose.
             port_text: String::new(),
-            ports,
+            ports: Vec::new(),
             patterns,
             baud_text: hterm_core::settings::DEFAULT_BAUD.to_string(),
             data_bits: DataBits::default(),
@@ -97,6 +130,79 @@ impl HtermApp {
             input_kind: TokenKind::Asc,
             history: History::default(),
             message: None,
+            settings_path: None,
+            saved: None,
+            next_autosave: Instant::now() + AUTOSAVE_INTERVAL,
+        }
+    }
+
+    fn apply_settings(&mut self, s: &Settings) {
+        let p = &s.port;
+        // The user's own last choice; it is restored but never auto-connected.
+        self.port_text = p.path.clone();
+        self.baud_text = p.baud.clone();
+        self.data_bits = DataBits::from_count(p.data_bits).unwrap_or_default();
+        self.stop_bits = StopBits::from_label(&p.stop_bits).unwrap_or_default();
+        self.parity = Parity::from_label(&p.parity).unwrap_or_default();
+        self.cts_flow = p.cts_flow;
+        self.patterns = p.patterns.clone();
+
+        let v = &s.view;
+        self.rx_formats = to_formats(v.receive_formats);
+        self.tx_formats = to_formats(v.transmit_formats);
+        self.autoscroll = v.autoscroll;
+        self.newline_sel = preset_index(&self.newline_presets, &v.newline_at);
+        self.show_newline = v.show_newline;
+        self.on_source_change = v.newline_on_source_change;
+        self.newline_every = v.newline_every;
+        self.pause_ms = v.newline_pause_ms;
+        self.log.set_counted_byte(v.count_byte);
+
+        self.input_kind = TokenKind::from_label(&s.input.kind).unwrap_or_default();
+        self.send_on_enter_sel = preset_index(&self.send_on_enter, &s.input.send_on_enter);
+    }
+
+    fn to_settings(&self) -> Settings {
+        Settings {
+            port: saved::PortSection {
+                path: self.port_text.trim().to_string(),
+                baud: self.baud_text.trim().to_string(),
+                data_bits: self.data_bits.count(),
+                stop_bits: self.stop_bits.label().into(),
+                parity: self.parity.label().into(),
+                cts_flow: self.cts_flow,
+                patterns: self.patterns.clone(),
+            },
+            view: saved::ViewSection {
+                receive_formats: to_flags(self.rx_formats),
+                transmit_formats: to_flags(self.tx_formats),
+                autoscroll: self.autoscroll,
+                newline_at: self.newline_presets[self.newline_sel].name.clone(),
+                show_newline: self.show_newline,
+                newline_on_source_change: self.on_source_change,
+                newline_every: self.newline_every,
+                newline_pause_ms: self.pause_ms,
+                count_byte: self.log.counter().value,
+            },
+            input: saved::InputSection {
+                kind: self.input_kind.label().into(),
+                send_on_enter: self.send_on_enter[self.send_on_enter_sel].name.clone(),
+            },
+        }
+    }
+
+    /// Write the settings file if anything changed since the last write.
+    fn save_settings(&mut self) {
+        let Some(path) = self.settings_path.clone() else {
+            return;
+        };
+        let current = self.to_settings();
+        if self.saved.as_ref() == Some(&current) {
+            return;
+        }
+        match current.save(&path) {
+            Ok(()) => self.saved = Some(current),
+            Err(e) => self.error(e.to_string()),
         }
     }
 
@@ -151,6 +257,8 @@ impl HtermApp {
                 self.lines_unavailable = false;
                 self.message = None;
                 self.conn = Some(conn);
+                // Save now too, so a crash later doesn't lose these settings.
+                self.save_settings();
             }
             Err(e) => self.error(format!("Could not open {}: {e}", self.port_text.trim())),
         }
@@ -213,7 +321,11 @@ impl HtermApp {
 }
 
 impl eframe::App for HtermApp {
-    fn logic(&mut self, _ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Ctrl+Q quits, like HTerm's File > Quit.
+        if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::Q)) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
         if let Some(conn) = &self.conn {
             let events = conn.poll_events();
             self.handle_events(events);
@@ -222,6 +334,12 @@ impl eframe::App for HtermApp {
         if *self.rx_view.rules() != rules {
             self.rebuild_views();
         }
+        if Instant::now() >= self.next_autosave {
+            self.save_settings();
+            self.next_autosave = Instant::now() + AUTOSAVE_INTERVAL;
+        }
+        // Make sure a pending autosave happens even when the app is idle.
+        ctx.request_repaint_after(AUTOSAVE_INTERVAL);
     }
 
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
@@ -253,6 +371,7 @@ impl eframe::App for HtermApp {
 
     fn on_exit(&mut self) {
         self.disconnect();
+        self.save_settings();
     }
 }
 
@@ -503,6 +622,29 @@ impl HtermApp {
             }
         });
     }
+}
+
+fn to_formats(f: FormatFlags) -> Formats {
+    Formats {
+        ascii: f.ascii,
+        hex: f.hex,
+        dec: f.dec,
+        bin: f.bin,
+    }
+}
+
+fn to_flags(f: Formats) -> FormatFlags {
+    FormatFlags {
+        ascii: f.ascii,
+        hex: f.hex,
+        dec: f.dec,
+        bin: f.bin,
+    }
+}
+
+/// Index of the preset with this name, or 0 ("None") if it no longer exists.
+fn preset_index(presets: &[NamedSequence], name: &str) -> usize {
+    presets.iter().position(|p| p.name == name).unwrap_or(0)
 }
 
 /// A text box with a dropdown of suggestions (HTerm's editable combo boxes).
