@@ -7,7 +7,7 @@ use eframe::egui::{self, Color32, ComboBox, DragValue, Panel, RichText, Sense, U
 use uartist_core::connection::{Connection, Event, ModemLines};
 use uartist_core::format::{Format, Formats};
 use uartist_core::input::{History, InputLine, TokenKind};
-use uartist_core::lines::LineRules;
+use uartist_core::lines::{LineRules, ReceiveMask};
 use uartist_core::log::{DataLog, Direction};
 use uartist_core::mfs::{self, NamedSequence};
 use uartist_core::ports;
@@ -16,6 +16,8 @@ use uartist_formats::settings::{self as saved, FormatFlags, Settings};
 
 use crate::input_line::{InputAction, input_line_ui};
 use crate::save_output::{SaveOutputDialog, SaveResult};
+use crate::send_dialog::{SendAction, SendDialog, SendSource};
+use crate::sequences_panel::{SeqAction, SequencesPanel};
 use crate::view::{DataView, ViewResponse};
 
 pub struct UartistApp {
@@ -34,6 +36,8 @@ pub struct UartistApp {
     rts: bool,
     lines: Option<ModemLines>,
     lines_unavailable: bool,
+    /// The port can't set DTR/RTS.
+    outputs_unavailable: bool,
 
     log: DataLog,
     rx_view: DataView,
@@ -57,17 +61,30 @@ pub struct UartistApp {
     input_kind: TokenKind,
     history: History,
 
-    /// Last warning or error, shown in the status bar.
-    message: Option<(String, bool)>,
+    /// Last message, shown in the status bar.
+    message: Option<(String, Level)>,
     /// Where settings are saved; `None` if the platform has no config folder.
     settings_path: Option<PathBuf>,
     /// What was last written, to save only when something changed.
     saved: Option<Settings>,
     next_autosave: Instant,
     save_output: SaveOutputDialog,
+    send: SendDialog,
+    sequences: SequencesPanel,
     /// The view clicked last; Ctrl+C copies its selection.
     active_view: Direction,
     theme: egui::ThemePreference,
+    clear_at_enabled: bool,
+    clear_at: u8,
+    rx_mask: ReceiveMask,
+}
+
+/// Status bar message importance.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Level {
+    Info,
+    Warning,
+    Error,
 }
 
 /// How often changed settings are written while the app runs.
@@ -119,6 +136,7 @@ impl UartistApp {
             rts: false,
             lines: None,
             lines_unavailable: false,
+            outputs_unavailable: false,
             log: DataLog::new(),
             rx_view: DataView::new(Direction::Rx, rules.clone()),
             tx_view: DataView::new(Direction::Tx, rules),
@@ -141,8 +159,13 @@ impl UartistApp {
             saved: None,
             next_autosave: Instant::now() + AUTOSAVE_INTERVAL,
             save_output: SaveOutputDialog::default(),
+            send: SendDialog::default(),
+            sequences: SequencesPanel::default(),
             active_view: Direction::Rx,
             theme: egui::ThemePreference::System,
+            clear_at_enabled: false,
+            clear_at: 0,
+            rx_mask: ReceiveMask::None,
         }
     }
 
@@ -168,10 +191,20 @@ impl UartistApp {
         self.pause_ms = v.newline_pause_ms;
         self.log.set_counted_byte(v.count_byte);
         self.theme = theme_from_label(&v.theme);
+        self.clear_at_enabled = v.clear_at_enabled;
+        self.clear_at = v.clear_at_byte;
+        self.rx_mask = ReceiveMask::from_label(&v.bitmask).unwrap_or_default();
+        self.rx_view.combined = v.combined;
 
         self.input_kind = TokenKind::from_label(&s.input.kind).unwrap_or_default();
         self.send_on_enter_sel = preset_index(&self.send_on_enter, &s.input.send_on_enter);
         self.save_output.apply(&s.save_output);
+        self.send.apply(&s.send);
+        self.sequences.visible = s.sequences.visible;
+        let errors = self.sequences.open_paths(&s.sequences.files);
+        if let Some(e) = errors.first() {
+            self.warn(e.clone());
+        }
     }
 
     fn to_settings(&self) -> Settings {
@@ -196,12 +229,21 @@ impl UartistApp {
                 newline_pause_ms: self.pause_ms,
                 count_byte: self.log.counter().value,
                 theme: theme_label(self.theme).into(),
+                clear_at_enabled: self.clear_at_enabled,
+                clear_at_byte: self.clear_at,
+                bitmask: self.rx_mask.label().into(),
+                combined: self.rx_view.combined,
             },
             input: saved::InputSection {
                 kind: self.input_kind.label().into(),
                 send_on_enter: self.send_on_enter[self.send_on_enter_sel].name.clone(),
             },
             save_output: self.save_output.to_section(),
+            send: self.send.to_section(),
+            sequences: saved::SequencesSection {
+                visible: self.sequences.visible,
+                files: self.sequences.paths(),
+            },
         }
     }
 
@@ -227,6 +269,7 @@ impl UartistApp {
             every: self.newline_every,
             on_source_change: self.on_source_change,
             pause: (self.pause_ms > 0).then(|| Duration::from_millis(self.pause_ms.into())),
+            rx_mask: self.rx_mask.bits(),
         }
     }
 
@@ -248,11 +291,15 @@ impl UartistApp {
     }
 
     fn info(&mut self, msg: impl Into<String>) {
-        self.message = Some((msg.into(), false));
+        self.message = Some((msg.into(), Level::Info));
+    }
+
+    fn warn(&mut self, msg: impl Into<String>) {
+        self.message = Some((msg.into(), Level::Warning));
     }
 
     fn error(&mut self, msg: impl Into<String>) {
-        self.message = Some((msg.into(), true));
+        self.message = Some((msg.into(), Level::Error));
     }
 
     fn connect(&mut self, ctx: &egui::Context) {
@@ -280,6 +327,7 @@ impl UartistApp {
                 self.rts = self.cts_flow;
                 self.lines = None;
                 self.lines_unavailable = false;
+                self.outputs_unavailable = false;
                 self.message = None;
                 self.conn = Some(conn);
                 // Save now too, so a crash later doesn't lose these settings.
@@ -298,21 +346,37 @@ impl UartistApp {
 
     fn handle_events(&mut self, events: Vec<Event>) {
         let mut trimmed = false;
+        let mut rx_cleared = false;
         for event in events {
             match event {
                 Event::Received { at, data } => {
+                    if self.clear_at_enabled {
+                        let (t, cleared) =
+                            self.log.push_rx_clear_at(at, data.clone(), self.clear_at);
+                        trimmed |= t;
+                        if cleared {
+                            rx_cleared = true;
+                            continue;
+                        }
+                    } else {
+                        trimmed |= self.log.push(Direction::Rx, at, data.clone());
+                    }
                     self.rx_view.push(Direction::Rx, at, &data);
-                    trimmed |= self.log.push(Direction::Rx, at, data);
                 }
                 Event::Sent { at, data } => {
+                    self.send.on_sent(data.len(), at);
+                    // Each view keeps what it shows (the combined view both).
                     self.tx_view.push(Direction::Tx, at, &data);
+                    self.rx_view.push(Direction::Tx, at, &data);
                     trimmed |= self.log.push(Direction::Tx, at, data);
                 }
                 Event::Lines(l) => self.lines = Some(l),
                 Event::LinesUnavailable => self.lines_unavailable = true,
-                Event::Warning(w) => self.info(w),
+                Event::OutputLinesUnavailable => self.outputs_unavailable = true,
+                Event::Warning(w) => self.warn(w),
                 Event::Error(e) => self.error(e),
                 Event::Closed => {
+                    self.send.stop();
                     self.conn = None;
                     self.lines = None;
                 }
@@ -320,10 +384,103 @@ impl UartistApp {
         }
         if trimmed {
             self.rebuild_views(false, false);
+        } else if rx_cleared {
+            self.rebuild_views(false, true);
         }
     }
 
+    /// The input line's bytes with the send-on-enter prefix and suffix.
+    fn input_bytes(&self) -> Result<Vec<u8>, String> {
+        let line = self.input.to_bytes().map_err(|e| e.to_string())?;
+        let soe = &self.send_on_enter[self.send_on_enter_sel];
+        let mut data = soe.prefix.clone();
+        data.extend(line);
+        data.extend(&soe.suffix);
+        Ok(data)
+    }
+
+    /// Load settings from an HTerm `hterm.cfg` chosen by the user.
+    fn import_hterm_config(&mut self) {
+        let Some(path) = rfd::FileDialog::new()
+            .set_title("Import HTerm config")
+            .add_filter("HTerm config", &["cfg"])
+            .pick_file()
+        else {
+            return;
+        };
+        self.import_hterm_config_from(&path);
+    }
+
+    fn import_hterm_config_from(&mut self, path: &std::path::Path) {
+        let text = match std::fs::read_to_string(path) {
+            Ok(t) => t,
+            Err(e) => return self.error(format!("Could not read {}: {e}", path.display())),
+        };
+        match uartist_formats::hterm_cfg::import(&text, &self.to_settings()) {
+            Ok(imported) => {
+                self.apply_settings(&imported.settings);
+                self.ports = ports::list_ports(&self.patterns);
+                let mut msg = format!("Imported {}", path.display());
+                if !imported.notes.is_empty() {
+                    msg.push_str(&format!(". Note: {}", imported.notes.join("; ")));
+                }
+                self.info(msg);
+            }
+            Err(e) => self.error(format!("{}: {e}", path.display())),
+        }
+    }
+
+    fn sequence_action(&mut self, action: SeqAction) {
+        match action {
+            SeqAction::None => {}
+            SeqAction::Send(tokens) => self.send_tokens(tokens),
+            SeqAction::Insert(tokens) => self.input.extend(tokens),
+            SeqAction::Info(msg) => self.info(msg),
+            SeqAction::Error(msg) => self.error(msg),
+        }
+    }
+
+    /// Send a sequence's chips as they are (no send-on-enter prefix/suffix).
+    fn send_tokens(&mut self, tokens: Vec<uartist_core::input::Token>) {
+        if self.send.is_running() {
+            self.error("Wait for the running send to finish, or stop it");
+            return;
+        }
+        let Some(conn) = &self.conn else {
+            self.error("Not connected");
+            return;
+        };
+        match InputLine::from_tokens(tokens).to_bytes() {
+            Ok(data) => conn.send(data),
+            Err(e) => self.error(e.to_string()),
+        }
+    }
+
+    fn start_send(&mut self) {
+        let data = match self.send.source() {
+            SendSource::InputLine => self.input_bytes(),
+            SendSource::File => self.send.load_file(),
+        };
+        match data {
+            Ok(data) if data.is_empty() => self.error("Nothing to send"),
+            Ok(data) => self.send.start(data, Instant::now()),
+            Err(e) => self.error(e),
+        }
+    }
+
+    fn stop_send(&mut self) {
+        self.send.stop();
+        if let Some(conn) = &self.conn {
+            conn.cancel_send();
+        }
+        self.info("Sending stopped");
+    }
+
     fn send_input(&mut self) {
+        if self.send.is_running() {
+            self.error("Wait for the running send to finish, or stop it");
+            return;
+        }
         let Some(conn) = &self.conn else {
             self.error("Not connected");
             return;
@@ -354,6 +511,16 @@ impl eframe::App for UartistApp {
         if let Some(conn) = &self.conn {
             let events = conn.poll_events();
             self.handle_events(events);
+        }
+        // Autosend / Send file: queue the next repetition when it's due.
+        if let Some(conn) = &self.conn
+            && let Some(data) = self.send.poll(Instant::now())
+        {
+            conn.send(data);
+        }
+        if let Some(bytes) = self.send.take_finished() {
+            self.send.open = false;
+            self.info(format!("Sent {bytes} bytes"));
         }
         let rules = self.line_rules();
         if *self.rx_view.rules() != rules {
@@ -391,6 +558,17 @@ impl eframe::App for UartistApp {
                 self.view_response(Direction::Tx, r, &ctx);
             });
         Panel::bottom("input").show(ui, |ui| self.input_panel(ui));
+        if self.sequences.visible {
+            let action = Panel::left("sequences")
+                .resizable(true)
+                .default_size(200.0)
+                .show(ui, |ui| {
+                    ui.add_space(4.0);
+                    self.sequences.ui(ui)
+                })
+                .inner;
+            self.sequence_action(action);
+        }
         egui::CentralPanel::default().show(ui, |ui| {
             ui.label(RichText::new("Received data").small().weak());
             let r = self
@@ -415,6 +593,15 @@ impl eframe::App for UartistApp {
                 Some(SaveResult::Saved(msg)) => self.info(msg),
                 Some(SaveResult::Failed(msg)) => self.error(msg),
                 None => {}
+            }
+        }
+        let action = self.sequences.editor_ui(&ctx);
+        self.sequence_action(action);
+        if self.send.open {
+            match self.send.ui(&ctx, self.conn.is_some()) {
+                SendAction::Start => self.start_send(),
+                SendAction::Stop => self.stop_send(),
+                SendAction::None => {}
             }
         }
     }
@@ -491,6 +678,10 @@ impl UartistApp {
                     self.rts = true;
                 }
             }
+            ui.separator();
+            for (name, on) in self.line_states() {
+                led(ui, name, on);
+            }
         });
     }
 
@@ -546,9 +737,34 @@ impl UartistApp {
             }
             format_checkboxes(ui, &mut self.rx_formats);
             ui.separator();
+            ui.toggle_value(&mut self.sequences.visible, "Sequences")
+                .on_hover_text("Show the sequences panel");
             if ui.button("Save output…").clicked() {
                 self.save_output.open = true;
             }
+            ui.separator();
+            ui.checkbox(&mut self.clear_at_enabled, "Clear at")
+                .on_hover_text("Clear the received view when this byte arrives");
+            ui.add(DragValue::new(&mut self.clear_at).range(0..=255));
+            let mut combined = self.rx_view.combined;
+            if ui
+                .checkbox(&mut combined, "Combined view")
+                .on_hover_text("Show sent data in the received view too (underlined)")
+                .changed()
+            {
+                self.rx_view.combined = combined;
+                self.rebuild_views(false, true);
+            }
+            ComboBox::from_id_salt("bitmask")
+                .width(100.0)
+                .selected_text(self.rx_mask.label())
+                .show_ui(ui, |ui| {
+                    for m in ReceiveMask::ALL {
+                        ui.selectable_value(&mut self.rx_mask, m, m.label());
+                    }
+                })
+                .response
+                .on_hover_text("Clear high bits of received bytes in the view");
             ui.separator();
             ui.label("Newline every");
             ui.add(DragValue::new(&mut self.newline_every).range(0..=4096))
@@ -561,10 +777,6 @@ impl UartistApp {
             ui.label("ms pause");
             ui.separator();
             ui.checkbox(&mut self.autoscroll, "Autoscroll");
-            ui.separator();
-            for (name, on) in self.line_states() {
-                led(ui, name, on);
-            }
         });
     }
 
@@ -600,9 +812,17 @@ impl UartistApp {
                         ui.selectable_value(&mut self.send_on_enter_sel, i, &p.name);
                     }
                 });
+            if ui
+                .button("Send file…")
+                .on_hover_text("Send a file, optionally repeated")
+                .clicked()
+            {
+                self.send.open_for(SendSource::File);
+            }
             ui.separator();
             let connected = self.conn.is_some();
-            ui.add_enabled_ui(connected, |ui| {
+            let outputs = connected && !self.outputs_unavailable;
+            ui.add_enabled_ui(outputs, |ui| {
                 if ui.toggle_value(&mut self.dtr, "DTR").changed()
                     && let Some(c) = &self.conn
                 {
@@ -613,6 +833,12 @@ impl UartistApp {
                 {
                     c.set_rts(self.rts);
                 }
+            })
+            .response
+            .on_disabled_hover_text(if connected {
+                "This port can't set DTR/RTS (for example a virtual port)"
+            } else {
+                "Connect first"
             });
         });
         ui.horizontal(|ui| {
@@ -625,7 +851,7 @@ impl UartistApp {
                         ui.selectable_value(&mut self.input_kind, k, k.label());
                     }
                 });
-            let send_w = 60.0;
+            let send_w = 150.0;
             let mut submit = false;
             ui.scope(|ui| {
                 ui.set_max_width(ui.available_width() - send_w - 8.0);
@@ -637,6 +863,13 @@ impl UartistApp {
                 .clicked()
             {
                 submit = true;
+            }
+            if ui
+                .button("Autosend…")
+                .on_hover_text("Send the input line repeatedly")
+                .clicked()
+            {
+                self.send.open_for(SendSource::InputLine);
             }
             if submit {
                 self.send_input();
@@ -665,17 +898,28 @@ impl UartistApp {
                 )),
                 None => ui.label("Not connected"),
             };
-            if let Some((msg, is_error)) = &self.message {
+            if let Some((msg, level)) = &self.message {
                 ui.separator();
-                let color = if *is_error {
-                    ui.visuals().error_fg_color
-                } else {
-                    ui.visuals().warn_fg_color
+                let color = match level {
+                    Level::Info => ui.visuals().text_color(),
+                    Level::Warning => ui.visuals().warn_fg_color,
+                    Level::Error => ui.visuals().error_fg_color,
                 };
                 ui.colored_label(color, msg);
             }
-            // Theme selector at the right end.
+            // Theme selector and settings menu at the right end.
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let connected = self.conn.is_some();
+                ui.menu_button("Settings", |ui| {
+                    if ui
+                        .add_enabled(!connected, egui::Button::new("Import HTerm config…"))
+                        .on_disabled_hover_text("Disconnect first")
+                        .clicked()
+                    {
+                        ui.close();
+                        self.import_hterm_config();
+                    }
+                });
                 let before = self.theme;
                 ComboBox::from_id_salt("theme")
                     .width(70.0)

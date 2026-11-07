@@ -19,6 +19,54 @@ pub struct LineRules {
     pub on_source_change: bool,
     /// Break when no data arrived for this long ("Newline by pause").
     pub pause: Option<Duration>,
+    /// Bits kept from received bytes ("Receive bitmask"); 0xFF = all.
+    pub rx_mask: u8,
+}
+
+/// "Receive bitmask": clear high bits of received bytes in the view.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ReceiveMask {
+    #[default]
+    None,
+    Bit8,
+    Bits7To8,
+    Bits6To8,
+    Bits5To8,
+}
+
+impl ReceiveMask {
+    pub const ALL: [ReceiveMask; 5] = [
+        Self::None,
+        Self::Bit8,
+        Self::Bits7To8,
+        Self::Bits6To8,
+        Self::Bits5To8,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::None => "No mask",
+            Self::Bit8 => "Mask bit 8",
+            Self::Bits7To8 => "Mask bits 7-8",
+            Self::Bits6To8 => "Mask bits 6-8",
+            Self::Bits5To8 => "Mask bits 5-8",
+        }
+    }
+
+    pub fn from_label(s: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|m| m.label() == s.trim())
+    }
+
+    /// The bits that are kept.
+    pub fn bits(self) -> u8 {
+        match self {
+            Self::None => 0xFF,
+            Self::Bit8 => 0x7F,
+            Self::Bits7To8 => 0x3F,
+            Self::Bits6To8 => 0x1F,
+            Self::Bits5To8 => 0x0F,
+        }
+    }
 }
 
 impl Default for LineRules {
@@ -29,6 +77,7 @@ impl Default for LineRules {
             every: 0,
             on_source_change: true,
             pause: None,
+            rx_mask: 0xFF,
         }
     }
 }
@@ -116,6 +165,10 @@ impl LineBuilder {
 
     fn push_byte(&mut self, byte: u8, dir: Direction) {
         let Self { rules, lines, .. } = self;
+        let byte = match dir {
+            Direction::Rx => byte & rules.rx_mask,
+            Direction::Tx => byte,
+        };
         let seq = rules.newline_at.as_slice();
         let line = lines.last_mut().expect("always one line");
         line.push(Cell {
@@ -231,6 +284,21 @@ mod tests {
         b.push_chunk(Direction::Tx, now, b"a\r");
         b.push_chunk(Direction::Rx, now, b"\nb\r\n");
         assert_eq!(render(&b), ["a\\r\\nb\\r\\n"]);
+    }
+
+    #[test]
+    fn receive_mask_applies_to_received_bytes_only() {
+        let mut b = LineBuilder::new(LineRules {
+            rx_mask: ReceiveMask::Bit8.bits(),
+            on_source_change: false,
+            ..Default::default()
+        });
+        let now = Instant::now();
+        b.push_chunk(Direction::Rx, now, &[0xC1, 0x8A]);
+        b.push_chunk(Direction::Tx, now, &[0xC1]);
+        let bytes: Vec<u8> = b.lines()[0].iter().map(|c| c.byte).collect();
+        assert_eq!(bytes, [0x41, 0x0A, 0xC1]);
+        assert_eq!(ReceiveMask::Bits5To8.bits(), 0x0F);
     }
 
     #[test]

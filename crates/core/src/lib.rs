@@ -9,8 +9,11 @@ pub mod input;
 pub mod lines;
 pub mod log;
 pub mod mfs;
+#[cfg(any(target_os = "linux", windows))]
+pub mod native;
 pub mod output;
 pub mod ports;
+pub mod sender;
 pub mod settings;
 
 /// Crate version, shown in the About dialog.

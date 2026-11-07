@@ -166,6 +166,20 @@ impl InputLine {
         Self::default()
     }
 
+    /// A line made of existing chips (e.g. from a sequence file).
+    pub fn from_tokens(tokens: Vec<Token>) -> Self {
+        Self {
+            tokens,
+            split_next: false,
+        }
+    }
+
+    /// Append chips at the end.
+    pub fn extend(&mut self, tokens: impl IntoIterator<Item = Token>) {
+        self.tokens.extend(tokens);
+        self.split_next = false;
+    }
+
     pub fn tokens(&self) -> &[Token] {
         &self.tokens
     }

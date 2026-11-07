@@ -1,11 +1,15 @@
 //! HTerm's "multi-format string" notation for byte sequences, used in its
-//! config for "Newline at" and "Send on enter" (`docs/spec/file-formats.md`).
+//! config ("Newline at", "Send on enter") and in `.hts` sequence files
+//! (`docs/spec/file-formats.md`, `docs/spec/sequences.md`).
 //!
-//! A sequence is a list of tagged groups: `d[13 10]` (decimal), `h[0]` (hex),
-//! `b[1010]` (binary, assumed). Groups can follow each other: `d[2]h[ff]`.
-//! Values use the same encoding as input-line tokens.
+//! A sequence is a list of tagged groups separated by spaces:
+//! `a[hi] h[0D] d[300] b[101] c[cmd]`.
+//! - `a[...]` is literal ASCII text, spaces included; `]` is written `\]`
+//!   and `\` is written `\\`. `c[...]` (CMD) is written the same way.
+//! - `h`, `d`, `b` groups hold one or more values separated by spaces
+//!   (`d[13 10]`), each encoded like an input-line chip.
 
-use crate::input::{InputError, encode_bin, encode_dec, encode_hex};
+use crate::input::{InputError, InputLine, Token, TokenKind};
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum MfsError {
@@ -19,31 +23,88 @@ pub enum MfsError {
     Value(#[from] InputError),
 }
 
-pub fn parse(s: &str) -> Result<Vec<u8>, MfsError> {
-    let mut out = Vec::new();
-    let mut rest = s.trim_start();
-    while !rest.is_empty() {
-        let pos = s.len() - rest.len();
-        let mut chars = rest.chars();
-        let tag = chars.next().ok_or(MfsError::Syntax(pos))?;
-        if chars.next() != Some('[') {
+/// Parse into input-line chips (one chip per value).
+pub fn parse_tokens(s: &str) -> Result<Vec<Token>, MfsError> {
+    let mut tokens = Vec::new();
+    let mut chars = s.char_indices().peekable();
+    loop {
+        while chars.next_if(|(_, c)| c.is_whitespace()).is_some() {}
+        let Some((pos, tag)) = chars.next() else {
+            break;
+        };
+        if chars.next().map(|(_, c)| c) != Some('[') {
             return Err(MfsError::Syntax(pos));
         }
-        let body_start = tag.len_utf8() + 1;
-        let close = rest[body_start..].find(']').ok_or(MfsError::Unclosed)?;
-        let body = &rest[body_start..body_start + close];
-        let encode: fn(&str) -> Result<Vec<u8>, InputError> = match tag {
-            'd' => encode_dec,
-            'h' => encode_hex,
-            'b' => encode_bin,
+        // Read the body up to an unescaped ']'.
+        let mut body = String::new();
+        let mut closed = false;
+        while let Some((_, c)) = chars.next() {
+            match c {
+                '\\' => match chars.next() {
+                    Some((_, e)) => body.push(e),
+                    None => return Err(MfsError::Unclosed),
+                },
+                ']' => {
+                    closed = true;
+                    break;
+                }
+                c => body.push(c),
+            }
+        }
+        if !closed {
+            return Err(MfsError::Unclosed);
+        }
+        let kind = match tag {
+            'a' => TokenKind::Asc,
+            'c' => TokenKind::Cmd,
+            'h' => TokenKind::Hex,
+            'd' => TokenKind::Dec,
+            'b' => TokenKind::Bin,
             other => return Err(MfsError::UnknownTag(other)),
         };
-        for value in body.split_whitespace() {
-            out.extend(encode(value)?);
+        match kind {
+            TokenKind::Asc | TokenKind::Cmd => {
+                if !body.is_empty() {
+                    tokens.push(Token::new(kind, body));
+                }
+            }
+            _ => {
+                for value in body.split_whitespace() {
+                    let t = Token::new(kind, value);
+                    t.to_bytes()?; // validate
+                    tokens.push(t);
+                }
+            }
         }
-        rest = rest[body_start + close + 1..].trim_start();
     }
-    Ok(out)
+    Ok(tokens)
+}
+
+/// Parse straight to bytes. CMD groups are an error (not supported yet).
+pub fn parse(s: &str) -> Result<Vec<u8>, MfsError> {
+    Ok(InputLine::from_tokens(parse_tokens(s)?).to_bytes()?)
+}
+
+/// Write chips the way HTerm saves them: `a[hi] h[0D] d[300]`.
+pub fn format_tokens(tokens: &[Token]) -> String {
+    tokens
+        .iter()
+        .map(|t| {
+            let (tag, text) = match t.kind {
+                TokenKind::Asc => ('a', escape(&t.text)),
+                TokenKind::Cmd => ('c', escape(&t.text)),
+                TokenKind::Hex => ('h', t.display()),
+                TokenKind::Dec => ('d', t.text.clone()),
+                TokenKind::Bin => ('b', t.text.clone()),
+            };
+            format!("{tag}[{text}]")
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn escape(s: &str) -> String {
+    s.replace('\\', "\\\\").replace(']', "\\]")
 }
 
 /// Write bytes as a decimal group, e.g. `[13, 10]` → `d[13 10]`. Empty → `""`.
@@ -112,9 +173,37 @@ mod tests {
     }
 
     #[test]
+    fn hts_values_from_hterm() {
+        // docs/spec/sequences.md
+        let s = "a[hi] h[0D] h[0A] d[300] b[101] a[a b]";
+        let tokens = parse_tokens(s).unwrap();
+        assert_eq!(tokens.len(), 6);
+        assert_eq!(tokens[5], Token::new(TokenKind::Asc, "a b"));
+        assert_eq!(
+            parse(s).unwrap(),
+            [0x68, 0x69, 0x0D, 0x0A, 0x01, 0x2C, 0x05, 0x61, 0x20, 0x62]
+        );
+        assert_eq!(format_tokens(&tokens), s, "round trip");
+    }
+
+    #[test]
+    fn escapes_and_cmd() {
+        let s = r"a[x\]y[z\\] c[test]";
+        let tokens = parse_tokens(s).unwrap();
+        assert_eq!(tokens[0], Token::new(TokenKind::Asc, r"x]y[z\"));
+        assert_eq!(tokens[1], Token::new(TokenKind::Cmd, "test"));
+        assert_eq!(format_tokens(&tokens), s);
+        assert!(matches!(
+            parse(s),
+            Err(MfsError::Value(InputError::CmdUnsupported))
+        ));
+    }
+
+    #[test]
     fn errors() {
         assert_eq!(parse("x[1]"), Err(MfsError::UnknownTag('x')));
         assert_eq!(parse("d[1"), Err(MfsError::Unclosed));
+        assert_eq!(parse("a[abc"), Err(MfsError::Unclosed));
         assert_eq!(parse("13"), Err(MfsError::Syntax(0)));
     }
 

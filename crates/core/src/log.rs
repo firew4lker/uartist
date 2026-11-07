@@ -101,6 +101,26 @@ impl DataLog {
         if data.is_empty() {
             return false;
         }
+        self.count(dir, &data);
+        self.store(dir, at, data)
+    }
+
+    /// Add received data with "Clear at": if `clear_at` occurs in it, all
+    /// received data up to and including its last occurrence is removed.
+    /// Counters still count every byte. Returns `(trimmed, cleared)`; after
+    /// either, views must be rebuilt.
+    pub fn push_rx_clear_at(&mut self, at: Instant, data: Vec<u8>, clear_at: u8) -> (bool, bool) {
+        let Some(pos) = data.iter().rposition(|&b| b == clear_at) else {
+            return (self.push(Direction::Rx, at, data), false);
+        };
+        self.count(Direction::Rx, &data);
+        self.clear(Direction::Rx);
+        let tail = data[pos + 1..].to_vec();
+        let trimmed = !tail.is_empty() && self.store(Direction::Rx, at, tail);
+        (trimmed, true)
+    }
+
+    fn count(&mut self, dir: Direction, data: &[u8]) {
         match dir {
             Direction::Rx => {
                 self.rx_total += data.len() as u64;
@@ -109,6 +129,9 @@ impl DataLog {
             }
             Direction::Tx => self.tx_total += data.len() as u64,
         }
+    }
+
+    fn store(&mut self, dir: Direction, at: Instant, data: Vec<u8>) -> bool {
         self.stored += chunk_cost(data.len());
         self.chunks.push(Chunk { dir, at, data });
         self.trim()
@@ -225,6 +248,36 @@ mod tests {
         assert_eq!(log.rx_total(), 900, "totals are unaffected");
         // Room again until the limit is reached.
         assert!(!log.push(Direction::Rx, now, vec![9; 100]));
+    }
+
+    #[test]
+    fn clear_at_keeps_only_bytes_after_the_marker() {
+        // docs/spec/views.md: "abc", then "deXfgh" with Clear at 'X' -> "fgh".
+        let mut log = DataLog::new();
+        let now = Instant::now();
+        log.push(Direction::Tx, now, b"sent".to_vec());
+        assert_eq!(
+            log.push_rx_clear_at(now, b"abc".to_vec(), b'X'),
+            (false, false)
+        );
+        assert_eq!(
+            log.push_rx_clear_at(now, b"deXfgh".to_vec(), b'X'),
+            (false, true)
+        );
+        let rx: Vec<u8> = log
+            .chunks_for(Some(Direction::Rx))
+            .flat_map(|c| c.data.clone())
+            .collect();
+        assert_eq!(rx, b"fgh");
+        assert_eq!(log.rx_total(), 9, "counters count everything");
+        assert_eq!(
+            log.chunks_for(Some(Direction::Tx)).count(),
+            1,
+            "sent data stays"
+        );
+        // Marker as the last byte: nothing received is left.
+        log.push_rx_clear_at(now, b"zX".to_vec(), b'X');
+        assert_eq!(log.chunks_for(Some(Direction::Rx)).count(), 0);
     }
 
     #[test]

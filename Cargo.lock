@@ -2001,6 +2001,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "nix"
+version = "0.31.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf20d2fde8ff38632c426f1165ed7436270b44f199fc55284c38276f9db47c3d"
+dependencies = [
+ "bitflags 2.13.2",
+ "cfg-if",
+ "cfg_aliases",
+ "libc",
+]
+
+[[package]]
 name = "nohash-hasher"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3026,7 +3038,7 @@ dependencies = [
  "core-foundation-sys",
  "io-kit-sys",
  "mach2",
- "nix",
+ "nix 0.26.4",
  "scopeguard",
  "unescaper",
  "windows-sys 0.52.0",
@@ -3479,7 +3491,7 @@ dependencies = [
 
 [[package]]
 name = "uartist"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "eframe",
@@ -3491,19 +3503,22 @@ dependencies = [
 
 [[package]]
 name = "uartist-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "crossbeam-channel",
  "glob",
+ "nix 0.31.3",
  "serialport",
  "thiserror 2.0.21",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
 name = "uartist-formats"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "directories",
+ "roxmltree",
  "serde",
  "thiserror 2.0.21",
  "toml",

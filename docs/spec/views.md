@@ -104,6 +104,31 @@ Observed on HTerm 0.8.9 by receiving `Hello\r\nWorld\0\xFF end` and then, a minu
 - **Count**: the user picks a byte value (default 0). The field next to it counts how many
   times that byte has been received. During the test, one 0x00 received gave Count = 1.
 
+## Clear at, receive bitmask, combined view
+
+Observed on HTerm 0.8.9 over a socat pair.
+
+- **Clear at** (checkbox + byte value, config `ClearAtByte status/value`):
+  when that byte is received, the received view is cleared, **including that
+  byte**; later bytes of the same data stay. Received `abc` then `deXfgh` with
+  Clear at 88 (`X`) left `fgh`. The Rx counter keeps counting everything (13).
+- **Receive bitmask** (Options menu, radio items: No mask, Mask bit 8,
+  Mask bit 7-8, Mask bit 6-8, Mask bit 5-8; config `Bitmask bits`): with
+  "Mask bit 8" selected, received `C1 FF 41 80` was still shown unchanged.
+  No visible effect was found.
+- **Combined view** (Options → Combined view transmit and receive): sent data
+  also appears in the received view, in order, with a coloured underline
+  (height set by "Receive box source underline height"). It applies to data
+  arriving after it's switched on.
+
+> Our version:
+> - Clear at works as observed.
+> - The bitmask strips the selected high bits from received bytes **in the
+>   view** (e.g. "Mask bit 8" shows `C1` as `41`), for 7-bit devices that set
+>   bit 8. The log and saved output keep the original bytes.
+> - The combined view re-renders all data at once, sent bytes underlined in the
+>   accent colour.
+
 ## Other output options
 
 - **Autoscroll**: default on.

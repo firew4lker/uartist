@@ -22,6 +22,8 @@ pub struct Settings {
     pub view: ViewSection,
     pub input: InputSection,
     pub save_output: SaveOutputSection,
+    pub send: SendSection,
+    pub sequences: SequencesSection,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -91,6 +93,13 @@ pub struct ViewSection {
     pub count_byte: u8,
     /// System, Light or Dark.
     pub theme: String,
+    /// "Clear at": clear the received view when this byte arrives.
+    pub clear_at_enabled: bool,
+    pub clear_at_byte: u8,
+    /// Receive bitmask label, e.g. "Mask bit 8".
+    pub bitmask: String,
+    /// Show sent data in the received view too.
+    pub combined: bool,
 }
 
 impl Default for ViewSection {
@@ -106,6 +115,10 @@ impl Default for ViewSection {
             newline_pause_ms: 0,
             count_byte: 0,
             theme: "System".into(),
+            clear_at_enabled: false,
+            clear_at_byte: 0,
+            bitmask: "No mask".into(),
+            combined: false,
         }
     }
 }
@@ -149,6 +162,37 @@ impl Default for SaveOutputSection {
             separator: String::new(),
             timestamps: false,
             path: String::new(),
+        }
+    }
+}
+
+/// Sequences panel.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SequencesSection {
+    pub visible: bool,
+    /// Open .hts files.
+    pub files: Vec<String>,
+}
+
+/// Autosend / Send file dialog.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SendSection {
+    pub repetitions: u32,
+    pub forever: bool,
+    pub delay_ms: u32,
+    /// Last file sent.
+    pub file_path: String,
+}
+
+impl Default for SendSection {
+    fn default() -> Self {
+        Self {
+            repetitions: 1,
+            forever: false,
+            delay_ms: 0,
+            file_path: String::new(),
         }
     }
 }

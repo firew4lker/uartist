@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<HtermSequenceFile name="Hterm Sequence File" version="0.8.9">
+  <ItemList>
+    <SequenceItem name="Greeting">
+      <sequence value="a[hi] h[0D] h[0A] d[300] b[101] a[a b]"/>
+      <description>says hi</description>
+    </SequenceItem>
+    <SequenceItem name="Tricky">
+      <sequence value="a[x\]y[z\\] c[test]"/>
+      <description></description>
+    </SequenceItem>
+  </ItemList>
+</HtermSequenceFile>

@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/core", "crates/formats", "crates/app"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
 repository = ""
@@ -14,7 +14,7 @@ uartist-core = { path = "crates/core" }
 uartist-formats = { path = "crates/formats" }
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+unsafe_code = "deny"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }

@@ -48,6 +48,9 @@ pub struct ViewResponse {
 
 pub struct DataView {
     dir: Direction,
+    /// Show both directions (HTerm's "Combined view transmit and receive").
+    /// Set it, then call `rebuild`.
+    pub combined: bool,
     builder: LineBuilder,
     /// Position of each line's first byte in the view's byte stream.
     line_offsets: Vec<u64>,
@@ -65,6 +68,7 @@ impl DataView {
     pub fn new(dir: Direction, rules: LineRules) -> Self {
         Self {
             dir,
+            combined: false,
             builder: LineBuilder::new(rules),
             line_offsets: vec![0],
             rows: Vec::new(),
@@ -82,7 +86,7 @@ impl DataView {
     /// Rebuild all lines from the log. `keep_selection` is false when the
     /// byte stream itself changed (clear or trim), so old positions are wrong.
     pub fn rebuild(&mut self, rules: LineRules, log: &DataLog, keep_selection: bool) {
-        self.builder = LineBuilder::from_chunks(rules, log.chunks_for(Some(self.dir)));
+        self.builder = LineBuilder::from_chunks(rules, log.chunks_for(self.filter()));
         self.line_offsets = vec![0];
         self.update_offsets(0);
         self.cols = 0;
@@ -105,7 +109,7 @@ impl DataView {
 
     /// Add new data. Only the rows of changed lines are rewrapped.
     pub fn push(&mut self, dir: Direction, at: Instant, data: &[u8]) {
-        if dir != self.dir {
+        if self.filter().is_some_and(|d| d != dir) {
             return;
         }
         // Lines before the one being filled are complete and won't change.
@@ -119,6 +123,11 @@ impl DataView {
             self.rows.truncate(keep);
             wrap_lines(&self.builder, first_changed, self.cols, &mut self.rows);
         }
+    }
+
+    /// Which data this view shows: one direction, or both when combined.
+    fn filter(&self) -> Option<Direction> {
+        (!self.combined).then_some(self.dir)
     }
 
     /// The selected bytes, if any.
@@ -213,6 +222,7 @@ impl DataView {
             let rows = &self.rows;
             let offsets = &self.line_offsets;
             let sel = self.selection.map(Selection::range);
+            let combined = self.combined;
             let sel_color = ui.visuals().selection.bg_fill;
             // Grid cells are already coloured, so outline the selection in the
             // strong accent colour instead of filling it.
@@ -244,9 +254,23 @@ impl DataView {
                                 );
                                 ui.painter().rect_filled(r, 0.0, sel_color);
                             }
-                            draw_ascii_row(ui, rect, cells, &font, cell_w);
+                            draw_ascii_row(ui, rect, cells, &font, cell_w, combined);
                         } else {
                             draw_grid_row(ui, rect, cells, &enabled, &font, cell_w, row_h);
+                            if combined {
+                                // Mark sent bytes with a bar under the column.
+                                let color = ui.visuals().selection.stroke.color;
+                                for (i, cell) in cells.iter().enumerate() {
+                                    if cell.dir == Direction::Tx {
+                                        let x = rect.min.x + i as f32 * cell_w;
+                                        let bar = Rect::from_min_max(
+                                            pos2(x, rect.max.y - 3.0),
+                                            pos2(x + cell_w - 2.0, rect.max.y - 1.0),
+                                        );
+                                        ui.painter().rect_filled(bar, 0.0, color);
+                                    }
+                                }
+                            }
                             for i in (0..cells.len()).filter(|&i| selected(i)) {
                                 let r = Rect::from_min_size(
                                     pos2(rect.min.x + i as f32 * cell_w - 1.0, rect.min.y - 1.0),
@@ -318,7 +342,7 @@ impl DataView {
             Some(s) => {
                 if self.bar.as_ref().map(|b| b.0) != Some(s) {
                     let (a, b) = s.range();
-                    let times = byte_times(log, self.dir, a, b);
+                    let times = byte_times(log, self.filter(), a, b);
                     let (diff, stamp) = match times {
                         Some((ta, tb)) => (
                             fmt_duration(tb.saturating_duration_since(ta)),
@@ -383,10 +407,15 @@ fn locate_cell(visible: &[(Rect, Row)], offsets: &[u64], cell_w: f32, p: Pos2) -
 }
 
 /// Arrival times of the chunks holding bytes `a` and `b` of this direction.
-fn byte_times(log: &DataLog, dir: Direction, a: u64, b: u64) -> Option<(Instant, Instant)> {
+fn byte_times(
+    log: &DataLog,
+    filter: Option<Direction>,
+    a: u64,
+    b: u64,
+) -> Option<(Instant, Instant)> {
     let mut pos = 0u64;
     let mut ta = None;
-    for c in log.chunks_for(Some(dir)) {
+    for c in log.chunks_for(filter) {
         let end = pos + c.data.len() as u64;
         if ta.is_none() && a < end {
             ta = Some(c.at);
@@ -490,8 +519,26 @@ fn ruler(
     }
 }
 
-fn draw_ascii_row(ui: &Ui, rect: Rect, cells: &[Cell], font: &FontId, cell_w: f32) {
+fn draw_ascii_row(
+    ui: &Ui,
+    rect: Rect,
+    cells: &[Cell],
+    font: &FontId,
+    cell_w: f32,
+    underline_tx: bool,
+) {
     let painter = ui.painter_at(rect);
+    if underline_tx {
+        // Combined view: underline sent bytes, like HTerm.
+        let stroke = Stroke::new(2.0, ui.visuals().selection.stroke.color);
+        for (i, cell) in cells.iter().enumerate() {
+            if cell.dir == Direction::Tx {
+                let x = rect.min.x + i as f32 * cell_w;
+                let y = rect.max.y - 1.0;
+                painter.line_segment([pos2(x, y), pos2(x + cell_w, y)], stroke);
+            }
+        }
+    }
     let text = ui.visuals().text_color();
     let weak = ui.visuals().weak_text_color();
     for (i, cell) in cells.iter().enumerate() {
@@ -516,15 +563,28 @@ fn draw_ascii_cell(
             painter.text(r.center(), Align2::CENTER_CENTER, c, font.clone(), text);
         }
         AsciiGlyph::Control(sym) => {
-            // Small two-character symbol squeezed into one cell.
-            let small = FontId::monospace(font.size * 0.55);
-            painter.text(
-                r.center() + vec2(0.0, 2.0),
-                Align2::CENTER_CENTER,
-                sym,
-                small,
-                weak,
-            );
+            if r.width() >= font.size * 1.5 {
+                // Wide grid cell: room for the symbol at full size.
+                painter.text(r.center(), Align2::CENTER_CENTER, sym, font.clone(), weak);
+            } else {
+                // One character cell: two small letters stacked, like the
+                // control pictures of hardware terminals (CR, LF, NU).
+                let (top, bottom) = match byte {
+                    b'\r' => ("C", "R"),
+                    b'\n' => ("L", "F"),
+                    _ => ("N", "U"),
+                };
+                let small = FontId::monospace(font.size * 0.52);
+                let x = r.center().x;
+                painter.text(
+                    pos2(x, r.min.y),
+                    Align2::CENTER_TOP,
+                    top,
+                    small.clone(),
+                    weak,
+                );
+                painter.text(pos2(x, r.max.y), Align2::CENTER_BOTTOM, bottom, small, weak);
+            }
         }
         AsciiGlyph::Unprintable => {
             let b =

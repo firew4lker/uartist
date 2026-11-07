@@ -106,3 +106,40 @@ fn hardware_flow_control_keeps_rts_on() {
     }
     assert_eq!(got, b"flow");
 }
+
+/// Full check of Mark/Space parity and 1.5 stop bits on a real port, read
+/// back with `stty` after closing (the port is opened exclusively).
+#[test]
+#[ignore = "needs a USB-serial adapter; set UARTIST_TEST_PORT"]
+#[cfg(target_os = "linux")]
+fn mark_space_parity_and_one_and_a_half_stop_bits() {
+    use uartist_core::settings::{DataBits, Parity, StopBits};
+    let path = std::env::var("UARTIST_TEST_PORT").expect("set UARTIST_TEST_PORT");
+    let stty = || {
+        let out = std::process::Command::new("stty")
+            .args(["-F", &path, "-a"])
+            .output()
+            .expect("stty");
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+    let has = |flags: &str, f: &str| flags.split_whitespace().any(|w| w == f);
+
+    for (parity, parodd) in [(Parity::Mark, true), (Parity::Space, false)] {
+        let mut s = PortSettings::new(path.clone());
+        s.parity = parity;
+        Connection::open(s, || {}).expect("open").close();
+        let f = stty();
+        assert!(
+            has(&f, "parenb") && has(&f, "cmspar") && has(&f, "inpck"),
+            "{parity:?}: {f}"
+        );
+        assert_eq!(has(&f, "parodd"), parodd, "{parity:?}: {f}");
+    }
+
+    let mut s = PortSettings::new(path.clone());
+    s.data_bits = DataBits::Five;
+    s.stop_bits = StopBits::OnePointFive;
+    Connection::open(s, || {}).expect("open").close();
+    let f = stty();
+    assert!(has(&f, "cs5") && has(&f, "cstopb"), "{f}");
+}

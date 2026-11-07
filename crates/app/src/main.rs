@@ -4,6 +4,8 @@
 mod app;
 mod input_line;
 mod save_output;
+mod send_dialog;
+mod sequences_panel;
 mod theme;
 mod view;
 

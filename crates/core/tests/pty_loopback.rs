@@ -83,10 +83,17 @@ fn send_and_receive_over_pty_pair() {
     };
     let conn = Connection::open(PortSettings::new(a.to_string_lossy()), || {}).expect("open");
 
-    // HTerm-style: virtual ports can't report status lines.
+    // Virtual ports can't set or report modem lines; each is reported once,
+    // without warnings.
+    let mut saw_outputs = false;
+    let mut warnings = 0;
     wait_for(&conn, |e| {
+        saw_outputs |= matches!(e, Event::OutputLinesUnavailable);
+        warnings += usize::from(matches!(e, Event::Warning(_)));
         matches!(e, Event::LinesUnavailable).then_some(())
     });
+    assert!(saw_outputs, "OutputLinesUnavailable is reported");
+    assert_eq!(warnings, 0, "no warnings for a virtual port");
 
     // Tx: what we send arrives at the other end and is reported as Sent.
     let reader = std::thread::spawn({
@@ -119,11 +126,51 @@ fn send_and_receive_over_pty_pair() {
 }
 
 #[test]
-fn unsupported_settings_fail_to_open() {
+fn one_and_a_half_stop_bits_need_five_data_bits() {
     let mut s = PortSettings::new("/dev/null");
-    s.parity = uartist_core::settings::Parity::Mark;
+    s.stop_bits = uartist_core::settings::StopBits::OnePointFive;
     let err = Connection::open(s, || {}).err().expect("should fail");
-    assert!(err.to_string().contains("Mark parity"));
+    assert!(err.to_string().contains("5 data bits"), "{err}");
+}
+
+/// Mark/Space parity and 1.5 stop bits reach the port's termios (checked
+/// with `stty` after closing: the port is opened exclusively). A pty strips
+/// PARENB and the character size itself, so only CMSPAR, PARODD and CSTOPB
+/// can be checked here; the hardware test checks the full flags.
+#[test]
+fn mark_space_parity_and_one_and_a_half_stop_bits_are_applied() {
+    use uartist_core::settings::{DataBits, Parity, StopBits};
+    let Some((_socat, a, _b)) = start_socat() else {
+        eprintln!("socat not available; skipping");
+        return;
+    };
+    let real = std::fs::canonicalize(&a).unwrap();
+    let stty = || {
+        let out = Command::new("stty")
+            .arg("-F")
+            .arg(&real)
+            .arg("-a")
+            .output()
+            .expect("stty");
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+    let has = |flags: &str, f: &str| flags.split_whitespace().any(|w| w == f);
+
+    for (parity, want_parodd) in [(Parity::Mark, true), (Parity::Space, false)] {
+        let mut s = PortSettings::new(a.to_string_lossy());
+        s.parity = parity;
+        Connection::open(s, || {}).expect("open").close();
+        let flags = stty();
+        assert!(has(&flags, "cmspar"), "{parity:?}: {flags}");
+        assert_eq!(has(&flags, "parodd"), want_parodd, "{parity:?}: {flags}");
+    }
+
+    let mut s = PortSettings::new(a.to_string_lossy());
+    s.data_bits = DataBits::Five;
+    s.stop_bits = StopBits::OnePointFive;
+    Connection::open(s, || {}).expect("open").close();
+    let flags = stty();
+    assert!(has(&flags, "cstopb"), "{flags}");
 }
 
 #[test]

@@ -4,7 +4,7 @@
 # then run `updpkgsums` and `makepkg --printsrcinfo > .SRCINFO`.
 
 pkgname=uartist
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
 pkgdesc='Serial port terminal with ASCII, hex, decimal and binary views'
 arch=('x86_64' 'aarch64')

@@ -45,6 +45,8 @@ pub enum Event {
     Lines(ModemLines),
     /// The port can't report status lines (e.g. a virtual port). Sent once.
     LinesUnavailable,
+    /// The port can't set DTR/RTS (e.g. a virtual port). Sent once.
+    OutputLinesUnavailable,
     /// A non-fatal problem, e.g. DTR couldn't be set.
     Warning(String),
     /// A fatal error; a [`Event::Closed`] follows.
@@ -60,6 +62,10 @@ pub enum OpenError {
     #[error("baud rate has to be a number greater than zero")]
     InvalidBaud,
     #[error("{0}")]
+    Invalid(&'static str),
+    #[error("could not apply port settings: {0}")]
+    Native(#[from] io::Error),
+    #[error("{0}")]
     Serial(#[from] serialport::Error),
 }
 
@@ -69,6 +75,7 @@ enum Command {
     SetDtr(bool),
     SetRts(bool),
     SetCtsFlow(bool),
+    CancelSend,
     Close,
 }
 
@@ -110,6 +117,11 @@ impl Connection {
         if !data.is_empty() {
             let _ = self.commands.send(Command::Send(data));
         }
+    }
+
+    /// Discard data queued for sending that hasn't gone out yet.
+    pub fn cancel_send(&self) {
+        let _ = self.commands.send(Command::CancelSend);
     }
 
     pub fn set_dtr(&self, on: bool) {
@@ -164,23 +176,52 @@ fn open_port(s: &PortSettings) -> Result<Box<dyn SerialPort>, OpenError> {
     let stop_bits = match s.stop_bits {
         StopBits::One => serialport::StopBits::One,
         StopBits::Two => serialport::StopBits::Two,
-        StopBits::OnePointFive => return Err(OpenError::Unsupported("1.5 stop bits")),
+        // UARTs only do 1.5 stop bits with 5 data bits.
+        StopBits::OnePointFive if s.data_bits != DataBits::Five => {
+            return Err(OpenError::Invalid("1.5 stop bits need 5 data bits"));
+        }
+        // On Unix, "2 stop bits" with 5 data bits is 1.5; Windows sets it natively.
+        StopBits::OnePointFive if cfg!(windows) => serialport::StopBits::One,
+        StopBits::OnePointFive => serialport::StopBits::Two,
     };
     let parity = match s.parity {
         Parity::None => serialport::Parity::None,
         Parity::Even => serialport::Parity::Even,
         Parity::Odd => serialport::Parity::Odd,
-        Parity::Mark => return Err(OpenError::Unsupported("Mark parity")),
-        Parity::Space => return Err(OpenError::Unsupported("Space parity")),
+        // Applied natively after opening.
+        Parity::Mark | Parity::Space => serialport::Parity::None,
     };
-    let port = serialport::new(&s.path, s.baud)
+    let builder = serialport::new(&s.path, s.baud)
         .data_bits(data_bits)
         .stop_bits(stop_bits)
         .parity(parity)
         .flow_control(flow(s.cts_flow))
-        .timeout(READ_TIMEOUT_IDLE)
-        .open()?;
-    Ok(port)
+        .timeout(READ_TIMEOUT_IDLE);
+    if !crate::native::needed(s.parity, s.stop_bits) {
+        return Ok(builder.open()?);
+    }
+    open_with_native(builder, s)
+}
+
+#[cfg(any(target_os = "linux", windows))]
+fn open_with_native(
+    builder: serialport::SerialPortBuilder,
+    s: &PortSettings,
+) -> Result<Box<dyn SerialPort>, OpenError> {
+    let port = builder.open_native()?;
+    crate::native::apply(&port, s.parity, s.stop_bits)?;
+    Ok(Box::new(port))
+}
+
+#[cfg(not(any(target_os = "linux", windows)))]
+fn open_with_native(
+    _builder: serialport::SerialPortBuilder,
+    s: &PortSettings,
+) -> Result<Box<dyn SerialPort>, OpenError> {
+    Err(OpenError::Unsupported(match s.parity {
+        Parity::Mark => "Mark parity on this system",
+        _ => "Space parity on this system",
+    }))
 }
 
 fn flow(cts: bool) -> FlowControl {
@@ -206,6 +247,8 @@ struct Worker {
     pending: Vec<u8>,
     lines: Option<ModemLines>,
     lines_state: LinesState,
+    /// Whether setting DTR/RTS works: unknown until the first attempt.
+    outputs_supported: Option<bool>,
     next_line_poll: Instant,
     timeout: Duration,
     produced: bool,
@@ -237,6 +280,7 @@ impl Worker {
             pending: Vec::new(),
             lines: None,
             lines_state: LinesState::Unknown,
+            outputs_supported: None,
             next_line_poll: Instant::now(),
             timeout: READ_TIMEOUT_IDLE,
             produced: false,
@@ -273,6 +317,10 @@ impl Worker {
                 match self.commands.try_recv() {
                     Ok(Command::Close) | Err(TryRecvError::Disconnected) => return Ok(()),
                     Ok(Command::Send(data)) => self.pending.extend_from_slice(&data),
+                    Ok(Command::CancelSend) => {
+                        self.pending.clear();
+                        let _ = self.port.clear(ClearBuffer::Output);
+                    }
                     Ok(cmd @ (Command::SetDtr(_) | Command::SetRts(_))) => self.set_line(cmd),
                     Ok(Command::SetCtsFlow(on)) => {
                         if let Err(e) = self.port.set_flow_control(flow(on)) {
@@ -353,9 +401,18 @@ impl Worker {
             Command::SetRts(on) => ("RTS", self.port.write_request_to_send(on)),
             _ => return,
         };
-        if let Err(e) = result {
-            // Virtual ports often can't do this; not fatal.
-            self.emit(Event::Warning(format!("Could not set {name}: {e}")));
+        match (result, self.outputs_supported) {
+            (Ok(()), _) => self.outputs_supported = Some(true),
+            // The very first attempt (right after opening) failed: the port
+            // can't do it, e.g. a virtual port. Say so once, then stay quiet.
+            (Err(_), None) => {
+                self.outputs_supported = Some(false);
+                self.emit(Event::OutputLinesUnavailable);
+            }
+            (Err(_), Some(false)) => {}
+            (Err(e), Some(true)) => {
+                self.emit(Event::Warning(format!("Could not set {name}: {e}")));
+            }
         }
     }
 
