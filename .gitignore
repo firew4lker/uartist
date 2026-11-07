@@ -1,0 +1,7 @@
+# Original proprietary binary: reference only, never commit
+/hterm
+/hterm.cfg
+/hterm.debug
+
+/target/
+**/*.rs.bk

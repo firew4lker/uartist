@@ -1,0 +1,24 @@
+[workspace]
+resolver = "3"
+members = ["crates/core", "crates/formats", "crates/app"]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+license = "GPL-3.0-or-later"
+repository = ""
+rust-version = "1.95"
+
+[workspace.dependencies]
+hterm-core = { path = "crates/core" }
+hterm-formats = { path = "crates/formats" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[profile.release]
+lto = "thin"
+strip = true

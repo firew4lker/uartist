@@ -1,0 +1,15 @@
+[package]
+name = "hterm-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+crossbeam-channel = "0.5.17"
+glob = "0.3.4"
+serialport = { version = "4.10.1", default-features = false }
+thiserror = "2.0.21"

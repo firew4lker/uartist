@@ -1,0 +1,14 @@
+[package]
+name = "hterm-open"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+eframe = "0.37.0"
+hterm-core.workspace = true
+hterm-formats.workspace = true
