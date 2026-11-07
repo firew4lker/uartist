@@ -1,0 +1,3 @@
+# HTerm sample files are test fixtures: keep their exact bytes on every
+# platform (no CRLF conversion on Windows checkouts).
+crates/formats/tests/fixtures/* -text
