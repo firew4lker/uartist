@@ -138,7 +138,7 @@ Original scope:
 - Final project name and icon.
 - Whether our own sequence format stays TOML or becomes something else.
 
-## v0.2 (in progress, uncommitted)
+## v0.2
 
 Done: send dialog (Autosend + Send file), sequences panel with `.hts` load/edit/save,
 Mark/Space parity and 1.5 stop bits (native code in `crates/core/src/native.rs`),
@@ -146,5 +146,5 @@ Clear at, receive bitmask, combined view, HTerm `hterm.cfg` import (Settings men
 polish (virtual-port warnings, CR/LF/NUL symbols, LEDs moved to first row).
 Specs: `docs/spec/send-dialog.md`, `docs/spec/sequences.md`, views.md additions.
 
-Not yet done: GUI test of the HTerm config import, Windows run of the native parity
-code, README/feature list update, commit, tag v0.2.0.
+Not verified yet: HTerm config import through the app's file chooser, and the
+Windows side of the native parity/stop-bits code on real Windows.
